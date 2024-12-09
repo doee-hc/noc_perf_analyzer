@@ -6,6 +6,7 @@ import os
 import json
 from scipy.spatial import KDTree
 import address_map_parser as amp
+import latency_analyzer as la
 
 def main():
     root = tk.Tk()
@@ -54,22 +55,36 @@ def main():
 
     log_vars = []
 
+    type_colors = {}
+    type_list = ["AXI_AR", "AXI_R", "AXI_AW", "AXI_W", "AXI_B", "AHB_WR", "AHB_RD", "APB_WR", "APB_RD"]  
+    for i, t in enumerate(type_list):
+        type_colors[t] = colors(i % 10)
+
     def draw_scatter():
         ax.clear()
         scatter_plots.clear()
         visible_indices = [i for i, var in enumerate(log_vars) if var.get()]
+
 
         if not visible_indices:
             ax.text(0.5, 0.5, 'No logs selected', horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
             fig.canvas.draw()
             return
 
+        handled_types = set()
         for j, i in enumerate(visible_indices):
             transactions = transactions_list[i]
-            x = [float(trans['time'].replace(' ns', '')) for trans in transactions]
-            y = [j] * len(transactions)
-            scatter = ax.scatter(x, y, label=os.path.basename(file_paths[i]), color=colors(i % 10), marker='s')
-            scatter_plots.append(scatter)
+            for trans in transactions:
+                x = float(trans['time'].replace(' ns', ''))
+                y = j
+                trans_type = trans['type']
+                color = type_colors.get(trans_type, 'black')
+                if trans_type not in handled_types:
+                    scatter = ax.scatter(x, y, label=trans_type, color=color, marker='s')
+                    handled_types.add(trans_type)
+                else:
+                    scatter = ax.scatter(x, y, color=color, marker='s')
+                scatter_plots.append(scatter)
 
         ax.set_xlabel('Time (ns)')
         if transactions_list:
@@ -77,9 +92,9 @@ def main():
             ax.set_xlim(0, max_time + 1000)
             ax.set_ylim(-1, len(visible_indices))
             ax.yaxis.set_ticks(range(len(visible_indices)))
-            ax.yaxis.set_ticklabels([os.path.basename(file_paths[i]) for i in visible_indices])
+            ax.yaxis.set_ticklabels([os.path.splitext(os.path.basename(file_paths[i]))[0] for i in visible_indices])
             ax.grid(True)
-            #ax.legend(loc='upper right')
+            ax.legend(loc='upper right',ncol=10)
         fig.canvas.draw()
 
     main_frame = tk.Frame(root)
@@ -134,7 +149,7 @@ def main():
             load_files()
             for i, file_path in enumerate(file_paths):
                 tab_left = ttk.Frame(notebook_left)
-                notebook_left.add(tab_left, text=os.path.basename(file_path))
+                notebook_left.add(tab_left, text=os.path.splitext(os.path.basename(file_path))[0])
 
                 log_text_left = Text(tab_left, height=10, width=200)
                 log_text_left.config(state=tk.NORMAL)
@@ -149,7 +164,7 @@ def main():
                 text_widgets_left.append(log_text_left)
 
                 tab_right = ttk.Frame(notebook_right)
-                notebook_right.add(tab_right, text=os.path.basename(file_path))
+                notebook_right.add(tab_right, text=os.path.splitext(os.path.basename(file_path))[0])
 
                 log_text_right = Text(tab_right, height=10, width=200)
                 log_text_right.config(state=tk.NORMAL)
@@ -165,13 +180,13 @@ def main():
 
                 log_var = tk.BooleanVar(value=True)
                 log_vars.append(log_var)
-                checkbutton = ttk.Checkbutton(checkbuttons_frame, text=os.path.basename(file_path), variable=log_var, command=draw_scatter)
+                checkbutton = ttk.Checkbutton(checkbuttons_frame, text=os.path.splitext(os.path.basename(file_path))[0], variable=log_var, command=draw_scatter)
                 checkbutton.pack(side=tk.TOP, anchor='w')
 
                 log_text_left.bind("<Button-1>", lambda e, idx=i: on_log_click(e, idx, 'left'))
                 log_text_right.bind("<Button-1>", lambda e, idx=i: on_log_click(e, idx, 'right'))
 
-            fig.set_size_inches(15, max(8, len(file_paths)))
+            fig.set_size_inches(15, max(4, len(file_paths)/2))
             draw_scatter()
 
     browse_button = tk.Button(control_frame, text="Browse Files", command=browse_files)
@@ -181,7 +196,7 @@ def main():
     reload_button.pack(side=tk.TOP, anchor='w')
 
     def on_click(event):
-        if event.xdata is None or event.ydata is None:
+        if event.xdata is None or event.ydata is None or event.key == 'control':
             return
 
         visible_indices = [i for i, var in enumerate(log_vars) if var.get()]
@@ -290,7 +305,7 @@ def main():
                     time_diff_text.remove()
                 except ValueError:
                     pass
-            time_diff_text = ax.text(0.95, 0.95, f'DT: {time_diff:.2f} ns', transform=ax.transAxes, horizontalalignment='right', verticalalignment='top', bbox=dict(facecolor='white', alpha=0.8))
+            time_diff_text = ax.text(0.05, 0.95, f'DT: {time_diff:.2f} ns', transform=ax.transAxes, horizontalalignment='left', verticalalignment='top', bbox=dict(facecolor='white', alpha=0.8))
             fig.canvas.draw()
 
     fig.canvas.mpl_connect('button_press_event', on_click)
