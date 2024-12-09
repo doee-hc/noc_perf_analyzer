@@ -1,0 +1,6 @@
+[
+  {"type": "AHB_WR", "time": "132798.00 ns", "cycle": 1057, "HADDR": "00003c00", "HWDATA": "0000000000000000", "HSIZE": "2", "HBURST": "0", "HPROT": "5", "HRESP": "0"},
+  {"type": "AHB_WR", "time": "132818.00 ns", "cycle": 1061, "HADDR": "00200000", "HWDATA": "1234561112345611", "HSIZE": "2", "HBURST": "0", "HPROT": "5", "HRESP": "0"},
+  {"type": "AHB_RD", "time": "134485.00 ns", "cycle": 1395, "HADDR": "00003c00", "HRDATA": "xxxxxxxxxxxxxxxx", "HSIZE": "2", "HBURST": "0", "HPROT": "1", "HRESP": "0"},
+  {"type": "AHB_RD", "time": "181740.00 ns", "cycle": 10861, "HADDR": "00200000", "HRDATA": "1234561112345611", "HSIZE": "2", "HBURST": "0", "HPROT": "1", "HRESP": "0"}
+]
