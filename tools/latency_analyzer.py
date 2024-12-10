@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import address_map_parser as amp
 
 def get_address_key(transaction_type):
     if transaction_type.startswith("AXI_AR"):
@@ -28,8 +29,13 @@ def calculate_delay(source, source_type, destination, destination_type, destinat
         print("dest_type:" + destination_type)
         raise ValueError("Invalid source or destination type")
     
-    result = []
     
+    result_entry = {
+        "ia_log": source_log_name,
+        "ta_log": destination_log_name,
+        "data":[]
+    }
+
     for src_index, src_trans in enumerate(source):
         if src_trans['type'] == source_type:
             src_addr = int(src_trans[source_addr_key], 16)
@@ -43,18 +49,16 @@ def calculate_delay(source, source_type, destination, destination_type, destinat
                         dest_time = float(dest_trans['time'].split()[0])
                         delay = dest_time - src_time
                         
-                        result_entry = {
+                        data_entry = {
                             "time": src_time,
                             "latency": delay,
-                            "ia_log": source_log_name,
                             "ia_index": src_index,
-                            "ta_log": destination_log_name,
                             "ta_index": dest_index
                         }
-                        result.append(result_entry)
+                        result_entry["data"].append(data_entry)
                         break
 
-    return result
+    return result_entry
 
 def process_logs(log_files, address_map_file, bus_map_file):
     with open(address_map_file, 'r') as f:
@@ -135,7 +139,7 @@ def process_logs(log_files, address_map_file, bus_map_file):
 
                                         result = calculate_delay(ia_log_data, source_type, ta_log_data, destination_type, base_addr, ia_log_name, ta_log_name)
 
-                                        if result:
+                                        if result["data"]:
                                             output_file_name = f"latency_{ia_log_name}_{ta_log_name}_{suffix}.json"
                                             with open(output_file_name, 'w') as f:
                                                 json.dump(result, f, indent=4)
@@ -148,26 +152,10 @@ def process_logs(log_files, address_map_file, bus_map_file):
 
                             result = calculate_delay(ia_log_data, source_type, ta_log_data, destination_type, base_addr, ia_log_name, ta_log_name)
 
-                            if result:
+                            if result["data"]:
                                 output_file_name = f"latency_{ia_log_name}_{ta_log_name}.json"
                                 with open(output_file_name, 'w') as f:
                                     json.dump(result, f, indent=4)
-
-def plot_results(results):
-    if not results:
-        messagebox.showinfo("Info", "No results to plot.")
-        return
-    
-    times = [entry["time"] for entry in results]
-    latencies = [entry["latency"] for entry in results]
-    
-    fig, ax = plt.subplots()
-    ax.plot(times, latencies, marker='o')
-    ax.set_xlabel('Time (ns)')
-    ax.set_ylabel('Latency (ns)')
-    ax.set_title('Latency over Time')
-    
-    return fig
 
 def load_and_process():
     log_files = filedialog.askopenfilenames(title="Select Log Files", filetypes=[("JSON files", "*.json")])

@@ -5,8 +5,7 @@ import matplotlib.pyplot as plt
 import os
 import json
 from scipy.spatial import KDTree
-import address_map_parser as amp
-import latency_analyzer as la
+import numpy as np
 
 def main():
     root = tk.Tk()
@@ -15,7 +14,7 @@ def main():
     file_paths = []
     latency_file_paths = []
 
-    fig, ax = plt.subplots(figsize=(15, 4))
+    fig, ax = plt.subplots(num='Transaction Wave', figsize=(15, 4))
 
     transactions_list = []
     log_lines_list = []
@@ -49,8 +48,9 @@ def main():
     colors = plt.cm.get_cmap('tab10', 10)
 
     scatter_plots = []
-    global highlight_marker, second_marker, time_diff_text
+    global highlight_marker, second_marker, time_diff_text, latency_highlight_marker
     highlight_marker = None
+    latency_highlight_marker = None
     second_marker = None
     time_diff_text = None
 
@@ -180,6 +180,7 @@ def main():
 
                 log_var = tk.BooleanVar(value=True)
                 log_vars.append(log_var)
+                #print(f"log_var:{log_var},{log_var.get()}")
                 checkbutton = ttk.Checkbutton(checkbuttons_frame, text=os.path.splitext(os.path.basename(file_path))[0], variable=log_var, command=draw_scatter)
                 checkbutton.pack(side=tk.TOP, anchor='w')
 
@@ -224,7 +225,7 @@ def main():
             log_text_left.config(state=tk.DISABLED)
             notebook_left.select(actual_index)
             time_value = float(nearest_trans['time'].replace(' ns', ''))
-            highlight_point(time_value, y_index)
+            highlight_point(time_value)
         elif event.button == 2:
             log_text_right.config(state=tk.NORMAL)
             log_text_right.tag_remove('highlight', '1.0', 'end')
@@ -235,7 +236,7 @@ def main():
             log_text_right.config(state=tk.DISABLED)
             notebook_right.select(actual_index)
             time_value = float(nearest_trans['time'].replace(' ns', ''))
-            highlight_second_point(time_value, y_index)
+            highlight_second_point(time_value)
 
     def on_log_click(event, idx, notebook_side):
         if notebook_side == 'left':
@@ -260,9 +261,9 @@ def main():
             if notebook_side == 'left':
                 highlight_point(time_value, y_index)
             else:
-                highlight_second_point(time_value, y_index)
+                highlight_second_point(time_value)
 
-    def highlight_point(time_value, y_index):
+    def highlight_point(time_value):
         global highlight_marker
         if highlight_marker:
             try:
@@ -278,7 +279,7 @@ def main():
         fig.canvas.draw()
         show_time_difference()
 
-    def highlight_second_point(time_value, y_index):
+    def highlight_second_point(time_value):
         global second_marker
         if second_marker:
             try:
@@ -350,31 +351,189 @@ def main():
     fig.canvas.mpl_connect('button_release_event', on_mouse_release)
     fig.canvas.mpl_connect('motion_notify_event', on_mouse_move)
 
+    latency_data = []
+    kdtree_latency = []
+
     def browse_latency_files():
         nonlocal latency_file_paths
         new_latency_file_paths = filedialog.askopenfilenames(initialdir="npa_db", title="Select latency files", filetypes=(("JSON files", "*.json"), ("all files", "*.*")))
         if new_latency_file_paths:
+            latency_data.clear()
+            kdtree_latency.clear()
+
             latency_file_paths = new_latency_file_paths
+            for i, latency_file_path in enumerate(latency_file_paths):
+                with open(latency_file_path, 'r') as file:
+                    data = json.load(file)
+                    latency_data.append(data)
+                    #times = [[float(dat['time'])] for dat in data['data']]
+                    #kdtree = KDTree(times)
+                    #kdtree_latency.append(kdtree)
+
             plot_latency()
 
     latency_button = tk.Button(control_frame, text="Latency Files", command=browse_latency_files)
     latency_button.pack(side=tk.TOP, anchor='w')
 
+
+
     def plot_latency():
-        fig_latency, ax_latency = plt.subplots(figsize=(15, 4))
-        colors = plt.cm.get_cmap('tab10', len(latency_file_paths))
+        num_data = len(latency_data)
+        fig_latency, axs = plt.subplots(num_data, 1, figsize=(15, num_data), sharex=True,num='Latency')
+        
+        if num_data == 1:
+            axs = [axs]  # Ensure axs is always a list of AxesSubplot
 
-        for i, latency_file_path in enumerate(latency_file_paths):
-            with open(latency_file_path, 'r') as file:
-                data = json.load(file)
-                times = [entry['time'] for entry in data]
-                latencies = [entry['latency'] for entry in data]
-                ax_latency.plot(times, latencies, label=os.path.basename(latency_file_path), color=colors(i))
+        colors = plt.cm.get_cmap('tab10', num_data)
 
-        ax_latency.set_xlabel('Time (ns)')
-        ax_latency.set_ylabel('Latency (ns)')
-        ax_latency.legend()
-        ax_latency.grid(True)
+
+        for i,data in enumerate(latency_data):
+            times = [entry['time'] for entry in data["data"]]
+            latencies = [entry['latency'] for entry in data["data"]]
+            axs[i].plot(times, latencies, label=f"{data['ia_log']}_{data['ta_log']}", 
+                         color=colors(i), marker='s', markersize=5)  
+            axs[i].set_ylabel('Latency (ns)')
+            axs[i].legend(loc='upper right')
+            kdtree_latency.append(KDTree([[t] for t in times]))
+
+        axs[-1].set_xlabel('Time (ns)')  # Set xlabel only on the bottom subplot
+        plt.tight_layout()
+
+        # Interaction logic
+        def on_latency_click(event):
+            global latency_highlight_marker
+
+            def select_tab(notebook, tab_text):
+                for index in range(notebook.index("end")):
+                    if notebook.tab(index, "text") == tab_text:
+                        notebook.select(index)
+                        return index
+
+            if event.inaxes is not None and event.key != 'control':
+                x_click = event.xdata
+                y_click = event.ydata
+                current_ax = event.inaxes
+                ax_index = np.where(axs == current_ax)[0][0] 
+            else:
+                return
+
+            kdtree = kdtree_latency[ax_index]
+            _, nearest_idx = kdtree.query([x_click])
+
+            ia_log = latency_data[ax_index]['ia_log']
+            ta_log = latency_data[ax_index]['ta_log']
+            ia_index = latency_data[ax_index]['data'][nearest_idx]['ia_index']
+            ta_index = latency_data[ax_index]['data'][nearest_idx]['ta_index']
+            time0 = latency_data[ax_index]['data'][nearest_idx]['time']
+            time1 = time0 + latency_data[ax_index]['data'][nearest_idx]['latency']
+
+            log_text_index = select_tab(notebook_left,ia_log)
+            log_text_left = text_widgets_left[log_text_index]
+            log_text_left.config(state=tk.NORMAL)
+            log_text_left.tag_remove('highlight', '1.0', 'end')
+            log_text_left.see(f"{ia_index + 1}.0")
+            log_text_left.tag_add('highlight', f"{ia_index + 1}.0", f"{ia_index + 2}.0")
+            log_text_left.tag_config('highlight', background='yellow')
+            log_text_left.config(state=tk.DISABLED)
+            highlight_point(time0)
+
+            log_text_index = select_tab(notebook_right,ta_log)
+            log_text_right = text_widgets_right[log_text_index]
+            log_text_right.config(state=tk.NORMAL)
+            log_text_right.tag_remove('highlight', '1.0', 'end')
+            log_text_right.see(f"{ta_index + 1}.0")
+            log_text_right.tag_add('highlight', f"{ta_index + 1}.0", f"{ta_index + 2}.0")
+            log_text_right.tag_config('highlight', background='yellow')
+            log_text_right.config(state=tk.DISABLED)
+            
+            highlight_second_point(time1)
+
+            if latency_highlight_marker:
+                try:
+                    latency_highlight_marker.remove()
+                except ValueError:
+                    pass
+            latency_highlight_marker = axs[ax_index].axvline(x=time0, color='red', linestyle='--', linewidth=2)
+            fig_latency.canvas.draw()
+
+            #
+            #with open(latency_file_paths[y_index], 'r') as file:
+            #    data = json.load(file)
+            #    nearest_entry = data[nearest_idx]
+            #    time_value = nearest_entry['time']
+            #    log_type = nearest_entry['type']
+
+            #    if log_type == 'ia':
+            #        notebook = notebook_left
+            #        text_widgets = text_widgets_left
+            #    else:
+            #        notebook = notebook_right
+            #        text_widgets = text_widgets_right
+
+            #    # Find the corresponding transaction
+            #    for i, transactions in enumerate(transactions_list):
+            #        for j, trans in enumerate(transactions):
+            #            if trans['time'] == time_value:
+            #                notebook.select(i)
+            #                log_text = text_widgets[i]
+            #                log_text.config(state=tk.NORMAL)
+            #                log_text.tag_remove('highlight', '1.0', 'end')
+            #                log_text.see(f"{j + 1}.0")
+            #                log_text.tag_add('highlight', f"{j + 1}.0", f"{j + 2}.0")
+            #                log_text.tag_config('highlight', background='yellow')
+            #                log_text.config(state=tk.DISABLED)
+            #                highlight_latency_point(event, time_value, y_index)
+            #                return
+
+        #def highlight_latency_point(event, time_value, y_index):
+        #    x_min, x_max = axs[y_index].get_xlim()
+        #    if time_value < x_min or time_value > x_max:
+        #        delta_x_div2 = (x_max - x_min) / 2
+        #        axs[y_index].set_xlim(time_value - delta_x_div2, time_value + delta_x_div2)
+        #    highlight_marker = axs[y_index].axvline(x=time_value, color='red', linestyle='--', linewidth=2)
+        #    fig_latency.canvas.draw()
+
+        fig_latency.canvas.mpl_connect('button_press_event', on_latency_click)
+
+        def limit_latency_zoom(event):
+            if event.name == 'scroll_event' and event.key == 'control':
+                if event.step > 0:
+                    scale_factor = 0.9
+                else:
+                    scale_factor = 1.1
+                for ax in axs:
+                    x_min, x_max = ax.get_xlim()
+                    x_center = event.xdata
+                    new_x_range = (x_max - x_min) * scale_factor
+                    new_x_min = x_center - (x_center - x_min) * scale_factor
+                    new_x_max = x_center + (x_max - x_center) * scale_factor
+
+                    ax.set_xlim(new_x_min, new_x_max)
+
+                fig_latency.canvas.draw()
+
+        def on_latency_mouse_press(event):
+            nonlocal pan_start
+            if event.button == 1 and event.key == 'control':
+                pan_start = event.xdata
+
+        def on_latency_mouse_release(event):
+            nonlocal pan_start
+            pan_start = None
+
+        def on_latency_mouse_move(event):
+            if pan_start is not None and event.xdata is not None:
+                for ax in axs:
+                    x_min, x_max = ax.get_xlim()
+                    dx = pan_start - event.xdata
+                    ax.set_xlim(x_min + dx, x_max + dx)
+                fig_latency.canvas.draw()
+
+        fig_latency.canvas.mpl_connect('scroll_event', limit_latency_zoom)
+        fig_latency.canvas.mpl_connect('button_press_event', on_latency_mouse_press)
+        fig_latency.canvas.mpl_connect('button_release_event', on_latency_mouse_release)
+        fig_latency.canvas.mpl_connect('motion_notify_event', on_latency_mouse_move)
+
         plt.show()
 
     root.after(100, browse_files)

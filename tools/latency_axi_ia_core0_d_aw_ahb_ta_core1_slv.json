@@ -1,18 +1,18 @@
-[
-    {
-        "time": 132641.0,
-        "latency": 157.0,
-        "ia_log": "axi_ia_core0_d_aw",
-        "ia_index": 40,
-        "ta_log": "ahb_ta_core1_slv",
-        "ta_index": 0
-    },
-    {
-        "time": 132656.0,
-        "latency": 162.0,
-        "ia_log": "axi_ia_core0_d_aw",
-        "ia_index": 41,
-        "ta_log": "ahb_ta_core1_slv",
-        "ta_index": 1
-    }
-]
+{
+    "ia_log": "axi_ia_core0_d_aw",
+    "ta_log": "ahb_ta_core1_slv",
+    "data": [
+        {
+            "time": 132641.0,
+            "latency": 157.0,
+            "ia_index": 40,
+            "ta_index": 0
+        },
+        {
+            "time": 132656.0,
+            "latency": 162.0,
+            "ia_index": 41,
+            "ta_index": 1
+        }
+    ]
+}
