@@ -13,6 +13,7 @@ def main():
     root.title("Bus Transaction Log")
 
     file_paths = []
+    latency_file_paths = []
 
     fig, ax = plt.subplots(figsize=(15, 4))
 
@@ -65,7 +66,6 @@ def main():
         scatter_plots.clear()
         visible_indices = [i for i, var in enumerate(log_vars) if var.get()]
 
-
         if not visible_indices:
             ax.text(0.5, 0.5, 'No logs selected', horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
             fig.canvas.draw()
@@ -94,7 +94,7 @@ def main():
             ax.yaxis.set_ticks(range(len(visible_indices)))
             ax.yaxis.set_ticklabels([os.path.splitext(os.path.basename(file_paths[i]))[0] for i in visible_indices])
             ax.grid(True)
-            ax.legend(loc='upper right',ncol=10)
+            ax.legend(loc='upper right', ncol=10)
         fig.canvas.draw()
 
     main_frame = tk.Frame(root)
@@ -272,7 +272,7 @@ def main():
 
         x_min, x_max = ax.get_xlim()
         if time_value < x_min or time_value > x_max:
-            delta_x_div2 = (x_max - x_min)/2
+            delta_x_div2 = (x_max - x_min) / 2
             ax.set_xlim(time_value - delta_x_div2, time_value + delta_x_div2)
         highlight_marker = ax.axvline(x=time_value, color='red', linestyle='--', linewidth=2)
         fig.canvas.draw()
@@ -288,7 +288,7 @@ def main():
 
         x_min, x_max = ax.get_xlim()
         if time_value < x_min or time_value > x_max:
-            delta_x_div2 = (x_max - x_min)/2
+            delta_x_div2 = (x_max - x_min) / 2
             ax.set_xlim(time_value - delta_x_div2, time_value + delta_x_div2)
         second_marker = ax.axvline(x=time_value, color='orange', linestyle='--', linewidth=2)
         fig.canvas.draw()
@@ -350,6 +350,33 @@ def main():
     fig.canvas.mpl_connect('button_release_event', on_mouse_release)
     fig.canvas.mpl_connect('motion_notify_event', on_mouse_move)
 
+    def browse_latency_files():
+        nonlocal latency_file_paths
+        new_latency_file_paths = filedialog.askopenfilenames(initialdir="npa_db", title="Select latency files", filetypes=(("JSON files", "*.json"), ("all files", "*.*")))
+        if new_latency_file_paths:
+            latency_file_paths = new_latency_file_paths
+            plot_latency()
+
+    latency_button = tk.Button(control_frame, text="Latency Files", command=browse_latency_files)
+    latency_button.pack(side=tk.TOP, anchor='w')
+
+    def plot_latency():
+        fig_latency, ax_latency = plt.subplots(figsize=(15, 4))
+        colors = plt.cm.get_cmap('tab10', len(latency_file_paths))
+
+        for i, latency_file_path in enumerate(latency_file_paths):
+            with open(latency_file_path, 'r') as file:
+                data = json.load(file)
+                times = [entry['time'] for entry in data]
+                latencies = [entry['latency'] for entry in data]
+                ax_latency.plot(times, latencies, label=os.path.basename(latency_file_path), color=colors(i))
+
+        ax_latency.set_xlabel('Time (ns)')
+        ax_latency.set_ylabel('Latency (ns)')
+        ax_latency.legend()
+        ax_latency.grid(True)
+        plt.show()
+
     root.after(100, browse_files)
 
     plt.show()
@@ -358,3 +385,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
