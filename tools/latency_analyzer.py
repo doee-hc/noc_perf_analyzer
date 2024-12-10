@@ -141,6 +141,7 @@ def process_logs(log_files, address_map_file, bus_map_file):
 
                                         if result["data"]:
                                             output_file_name = f"latency_{ia_log_name}_{ta_log_name}_{suffix}.json"
+                                            print(f"Write to {output_file_name}")
                                             with open(output_file_name, 'w') as f:
                                                 json.dump(result, f, indent=4)
                                     continue
@@ -154,6 +155,7 @@ def process_logs(log_files, address_map_file, bus_map_file):
 
                             if result["data"]:
                                 output_file_name = f"latency_{ia_log_name}_{ta_log_name}.json"
+                                print(f"Write to {output_file_name}")
                                 with open(output_file_name, 'w') as f:
                                     json.dump(result, f, indent=4)
 

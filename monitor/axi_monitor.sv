@@ -108,7 +108,7 @@ module axi_monitor #(
                 end else begin
                     $fwrite(log_file_aw, ",\n");
                 end
-                $fwrite(log_file_aw, "  {\"type\": \"WRITE_ADDR\", \"time\": \"%0t\", \"cycle\": %0d, \"AWID\": \"%h\", \"AWADDR\": \"%h\", \"AWLEN\": \"%h\", \"AWSIZE\": \"%h\", \"AWBURST\": \"%h\"}",
+                $fwrite(log_file_aw, "  {\"type\": \"AXI_AW\", \"time\": \"%0t\", \"cycle\": %0d, \"AWID\": \"%h\", \"AWADDR\": \"%h\", \"AWLEN\": \"%h\", \"AWSIZE\": \"%h\", \"AWBURST\": \"%h\"}",
                     $time, cycle_cnt, AWID, AWADDR, AWLEN, AWSIZE, AWBURST);
             end
 
@@ -119,7 +119,7 @@ module axi_monitor #(
                 end else begin
                     $fwrite(log_file_w, ",\n");
                 end
-                $fwrite(log_file_w, "  {\"type\": \"WRITE_DATA\", \"time\": \"%0t\", \"cycle\": %0d, \"WDATA\": \"%h\", \"WSTRB\": \"%h\", \"WLAST\": %b}",
+                $fwrite(log_file_w, "  {\"type\": \"AXI_W\", \"time\": \"%0t\", \"cycle\": %0d, \"WDATA\": \"%h\", \"WSTRB\": \"%h\", \"WLAST\": %b}",
                     $time, cycle_cnt, WDATA, WSTRB, WLAST);
             end
 
@@ -130,7 +130,7 @@ module axi_monitor #(
                 end else begin
                     $fwrite(log_file_b, ",\n");
                 end
-                $fwrite(log_file_b, "  {\"type\": \"WRITE_RESP\", \"time\": \"%0t\", \"cycle\": %0d, \"BID\": \"%h\", \"BRESP\": \"%h\"}",
+                $fwrite(log_file_b, "  {\"type\": \"AXI_B\", \"time\": \"%0t\", \"cycle\": %0d, \"BID\": \"%h\", \"BRESP\": \"%h\"}",
                     $time, cycle_cnt, BID, BRESP);
             end
 
@@ -141,7 +141,7 @@ module axi_monitor #(
                 end else begin
                     $fwrite(log_file_ar, ",\n");
                 end
-                $fwrite(log_file_ar, "  {\"type\": \"READ_ADDR\", \"time\": \"%0t\", \"cycle\": %0d, \"ARID\": \"%h\", \"ARADDR\": \"%h\", \"ARLEN\": \"%h\", \"ARSIZE\": \"%h\", \"ARBURST\": \"%h\"}",
+                $fwrite(log_file_ar, "  {\"type\": \"AXI_AR\", \"time\": \"%0t\", \"cycle\": %0d, \"ARID\": \"%h\", \"ARADDR\": \"%h\", \"ARLEN\": \"%h\", \"ARSIZE\": \"%h\", \"ARBURST\": \"%h\"}",
                     $time, cycle_cnt, ARID, ARADDR, ARLEN, ARSIZE, ARBURST);
             end
 
@@ -152,7 +152,7 @@ module axi_monitor #(
                 end else begin
                     $fwrite(log_file_r, ",\n");
                 end
-                $fwrite(log_file_r, "  {\"type\": \"READ_DATA\", \"time\": \"%0t\", \"cycle\": %0d, \"RID\": \"%h\", \"RDATA\": \"%h\", \"RRESP\": \"%h\", \"RLAST\": %b}",
+                $fwrite(log_file_r, "  {\"type\": \"AXI_R\", \"time\": \"%0t\", \"cycle\": %0d, \"RID\": \"%h\", \"RDATA\": \"%h\", \"RRESP\": \"%h\", \"RLAST\": %b}",
                     $time, cycle_cnt, RID, RDATA, RRESP, RLAST);
             end
         end
