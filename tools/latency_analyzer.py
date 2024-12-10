@@ -1,67 +1,193 @@
 import json
-import sys
+import os
+import re
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-def calculate_delay(source, source_type, destination, destination_type, destination_base_addr):
-    # Convert base address to integer
+def get_address_key(transaction_type):
+    if transaction_type.startswith("AXI_AR"):
+        return "ARADDR"
+    elif transaction_type.startswith("AXI_AW"):
+        return "AWADDR"
+    elif transaction_type.startswith("AHB"):
+        return "HADDR"
+    elif transaction_type.startswith("APB"):
+        return "PADDR"
+    else:
+        return None
+
+def calculate_delay(source, source_type, destination, destination_type, destination_base_addr, source_log_name, destination_log_name):
     base_addr = int(destination_base_addr, 16)
+    source_addr_key = get_address_key(source_type)
+    destination_addr_key = get_address_key(destination_type)
     
-    # Result list
+    if not source_addr_key or not destination_addr_key:
+        print("src_type:" + source_type)
+        print("dest_type:" + destination_type)
+        raise ValueError("Invalid source or destination type")
+    
     result = []
     
-    # Iterate over transactions in source
-    for src_trans in source:
+    for src_index, src_trans in enumerate(source):
         if src_trans['type'] == source_type:
-            # Get source address
-            src_addr = int(src_trans['ARADDR'], 16)
+            src_addr = int(src_trans[source_addr_key], 16)
             
-            # Iterate over transactions in destination
-            for dest_trans in destination:
+            for dest_index, dest_trans in enumerate(destination):
                 if dest_trans['type'] == destination_type:
-                    # Calculate actual address in destination
-                    dest_addr = int(dest_trans['HADDR'], 16) + base_addr
+                    dest_addr = int(dest_trans[destination_addr_key], 16) + base_addr
                     
-                    # If addresses match
                     if src_addr == dest_addr:
-                        # Calculate delay
                         src_time = float(src_trans['time'].split()[0])
                         dest_time = float(dest_trans['time'].split()[0])
                         delay = dest_time - src_time
                         
-                        # Add source transaction with delay information to result
-                        src_trans_with_delay = src_trans.copy()
-                        src_trans_with_delay['delay'] = delay
-                        result.append(src_trans_with_delay)
-                        break  # Break inner loop after match
+                        result_entry = {
+                            "time": src_time,
+                            "latency": delay,
+                            "ia_log": source_log_name,
+                            "ia_index": src_index,
+                            "ta_log": destination_log_name,
+                            "ta_index": dest_index
+                        }
+                        result.append(result_entry)
+                        break
 
     return result
 
-#def main():
-#    if len(sys.argv) != 4:
-#        print("Usage: python script.py <source_json_file> <destination_json_file> <output_json_file>")
-#        return
-#
-#    source_file = sys.argv[1]
-#    destination_file = sys.argv[2]
-#    output_file = sys.argv[3]
-#
-#    # Read input files
-#    with open(source_file, 'r') as f:
-#        source = json.load(f)
-#
-#    with open(destination_file, 'r') as f:
-#        destination = json.load(f)
-#
-#    # Example call
-#    source_type = "AXI_AR"  # Modify as needed
-#    destination_type = "AHB_RD"  # Modify as needed
-#    destination_base_addr = "44000000"  # Modify as needed
-#
-#    result = calculate_delay(source, source_type, destination, destination_type, destination_base_addr)
-#
-#    # Write to output file
-#    with open(output_file, 'w') as f:
-#        json.dump(result, f, indent=4)
-#
-#if __name__ == "__main__":
-#    main()
+def process_logs(log_files, address_map_file, bus_map_file):
+    with open(address_map_file, 'r') as f:
+        address_map = json.load(f)
+
+    with open(bus_map_file, 'r') as f:
+        bus_map = json.load(f)
+
+    ia_logs = {}
+    ta_logs = {}
+
+    for ia in bus_map["ia"]:
+        ia_logs[ia] = []
+    for ta_key in bus_map:
+        if ta_key != "ia":
+            for ta in bus_map[ta_key]:
+                ta_logs[ta] = []
+
+    for log_file in log_files:
+        log_file_name = os.path.basename(log_file)
+        
+        match_ia_axi = re.match(r'(axi)_ia_(.+?)_(ar|aw)', log_file_name)
+        match_ta_axi = re.match(r'(axi)_ta_(.+?)_(ar|aw)', log_file_name)
+        match_ia_ahb_apb = re.match(r'(ahb|apb)_ia_(.+)\.json', log_file_name)
+        match_ta_ahb_apb = re.match(r'(ahb|apb)_ta_(.+)\.json', log_file_name)
+        
+        if match_ia_axi:
+            log_type, ia_name, _ = match_ia_axi.groups()
+            ia_logs[f"{log_type}_ia_{ia_name}"].append(log_file)
+        elif match_ta_axi:
+            log_type, ta_name, _ = match_ta_axi.groups()
+            ta_logs[f"{log_type}_ta_{ta_name}"].append(log_file)
+        elif match_ia_ahb_apb:
+            log_type, ia_name = match_ia_ahb_apb.groups()
+            ia_logs[f"{log_type}_ia_{ia_name}"].append(log_file)
+        elif match_ta_ahb_apb:
+            log_type, ta_name = match_ta_ahb_apb.groups()
+            ta_logs[f"{log_type}_ta_{ta_name}"].append(log_file)
+
+    for ia in bus_map["ia"]:
+        for ia_log_file in ia_logs.get(ia, []):
+            ia_log_name = os.path.splitext(os.path.basename(ia_log_file))[0]
+
+            with open(ia_log_file, 'r') as f:
+                ia_log_data = json.load(f)
+            for region in address_map['regions']:
+                target_ta = region['target']
+                base_addr = region['base']
+                if target_ta in bus_map:
+                    for ta in bus_map[target_ta]:
+                        for ta_log_file in ta_logs.get(ta, []):
+                            ta_log_name = os.path.splitext(os.path.basename(ta_log_file))[0]
+
+                            if (ia_log_name.startswith('axi') and ia_log_name.endswith('ar') and
+                                ta_log_name.startswith('axi') and ta_log_name.endswith('ar')): 
+                                    source_type = "AXI_AR"
+                                    destination_type = "AXI_AR"
+                            elif (ia_log_name.startswith('axi') and ia_log_name.endswith('aw') and
+                                ta_log_name.startswith('axi') and ta_log_name.endswith('aw')): 
+                                    source_type = "AXI_AW"
+                                    destination_type = "AXI_AW"
+                            elif (ia_log_name.startswith('axi') and ia_log_name.endswith('ar') and
+                                ta_log_name.startswith('ahb') or ta_log_name.startswith('apb')): 
+                                    source_type = "AXI_AR"
+                                    destination_type = ta_log_name.split('_')[0].upper() + '_RD' 
+                            elif (ia_log_name.startswith('axi') and ia_log_name.endswith('aw') and
+                                ta_log_name.startswith('ahb') or ta_log_name.startswith('apb')): 
+                                    source_type = "AXI_AW"
+                                    destination_type = ta_log_name.split('_')[0].upper() + '_WR' 
+                            elif (ia_log_name.startswith('ahb') or ia_log_name.startswith('apb') and
+                                ta_log_name.startswith('ahb') or ta_log_name.startswith('apb')):
+                                    for suffix in ['RD', 'WR']:
+                                        source_type = ia_log_name.split('_')[0].upper() + '_' + suffix
+                                        destination_type = ta_log_name.split('_')[0].upper() + '_' + suffix
+
+                                        with open(ta_log_file, 'r') as f:
+                                            ta_log_data = json.load(f)
+
+                                        result = calculate_delay(ia_log_data, source_type, ta_log_data, destination_type, base_addr, ia_log_name, ta_log_name)
+
+                                        if result:
+                                            output_file_name = f"latency_{ia_log_name}_{ta_log_name}_{suffix}.json"
+                                            with open(output_file_name, 'w') as f:
+                                                json.dump(result, f, indent=4)
+                                    continue
+                            else:
+                                continue
+
+                            with open(ta_log_file, 'r') as f:
+                                ta_log_data = json.load(f)
+
+                            result = calculate_delay(ia_log_data, source_type, ta_log_data, destination_type, base_addr, ia_log_name, ta_log_name)
+
+                            if result:
+                                output_file_name = f"latency_{ia_log_name}_{ta_log_name}.json"
+                                with open(output_file_name, 'w') as f:
+                                    json.dump(result, f, indent=4)
+
+def plot_results(results):
+    if not results:
+        messagebox.showinfo("Info", "No results to plot.")
+        return
+    
+    times = [entry["time"] for entry in results]
+    latencies = [entry["latency"] for entry in results]
+    
+    fig, ax = plt.subplots()
+    ax.plot(times, latencies, marker='o')
+    ax.set_xlabel('Time (ns)')
+    ax.set_ylabel('Latency (ns)')
+    ax.set_title('Latency over Time')
+    
+    return fig
+
+def load_and_process():
+    log_files = filedialog.askopenfilenames(title="Select Log Files", filetypes=[("JSON files", "*.json")])
+    address_map_file = filedialog.askopenfilename(title="Select Address Map File", filetypes=[("JSON files", "*.json")])
+    bus_map_file = filedialog.askopenfilename(title="Select Bus Map File", filetypes=[("JSON files", "*.json")])
+    
+    if not log_files or not address_map_file or not bus_map_file:
+        messagebox.showwarning("Warning", "Please select all required files.")
+        return
+    
+    process_logs(log_files, address_map_file, bus_map_file)
+
+root = tk.Tk()
+root.title("Log Processor")
+
+frame = tk.Frame(root)
+frame.pack(pady=20)
+
+process_button = tk.Button(frame, text="Load and Process Logs", command=load_and_process)
+process_button.pack()
+
+root.mainloop()
 

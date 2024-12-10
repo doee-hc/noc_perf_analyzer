@@ -1,0 +1,5 @@
+{
+    "ia": ["axi_ia_core0_d", "axi_ia_core0_dma"],
+    "ta0": ["ahb_ta_core0_slv", "apb_ta_core0_peri"],
+    "ta1": ["axi_ta_core1", "ahb_ta_core1_slv"]
+}

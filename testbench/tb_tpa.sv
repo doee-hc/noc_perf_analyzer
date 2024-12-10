@@ -4,7 +4,7 @@ module tb_npa;
 
     // Instantiate APB monitor with filename as parameter
     apb_monitor #(
-        .log_filename("apb_cru_top"), // Pass the filename as parameter
+        .log_filename("apb_ta_cru_top"), // Pass the filename as parameter
         .ADDR_WIDTH(32),
         .DATA_WIDTH(32)
     ) u_apb_mon_cru_top(
@@ -23,7 +23,7 @@ module tb_npa;
 
 // Instantiate AXI monitor with filename as parameter
 axi_monitor #(
-    .log_filename("axi_core0_d"), // Pass the filename as parameter
+    .log_filename("axi_ia_core0_d"), // Pass the filename as parameter
     .ADDR_WIDTH(32),
     .DATA_WIDTH(64),
     .ID_WIDTH(4)
@@ -72,7 +72,7 @@ axi_monitor #(
 );
 
 axi_monitor #(
-    .log_filename("axi_core0_dma_m1"), // Pass the filename as parameter
+    .log_filename("axi_ia_core0_dma_m1"), // Pass the filename as parameter
     .ADDR_WIDTH(40),
     .DATA_WIDTH(256),
     .ID_WIDTH(4)
@@ -122,7 +122,7 @@ axi_monitor #(
 
 // Instantiate AHB monitor with filename as parameter
 ahb_monitor #(
-    .log_filename("ahb_core1_slv"), // Pass the filename as parameter
+    .log_filename("ahb_ta_core1_slv"), // Pass the filename as parameter
     .ADDR_WIDTH(32),
     .DATA_WIDTH(64)
 ) u_ahb_mon_core1_slv(

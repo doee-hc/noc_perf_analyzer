@@ -1,0 +1,120 @@
+{
+    "name": "map0",
+    "addr_width": 40,
+    "regions": [
+        {
+            "name": "region0",
+            "target": "ta0",
+            "base": "0x40000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region1",
+            "target": "ta1",
+            "base": "0x44000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region2",
+            "target": "ta2",
+            "base": "0x48000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region3",
+            "target": "ta3",
+            "base": "0x4C000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region4",
+            "target": "ta4",
+            "base": "0x50000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region5",
+            "target": "ta5",
+            "base": "0x54000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region6",
+            "target": "ta6",
+            "base": "0x58000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region7",
+            "target": "ta7",
+            "base": "0x5C000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region8",
+            "target": "ta8",
+            "base": "0x60000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region9",
+            "target": "ta9",
+            "base": "0x64000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region10",
+            "target": "ta10",
+            "base": "0x68000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region11",
+            "target": "ta11",
+            "base": "0x6C000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region12",
+            "target": "ta12",
+            "base": "0x70000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region13",
+            "target": "ta13",
+            "base": "0x74000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region14",
+            "target": "ta14",
+            "base": "0x78000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region15",
+            "target": "ta15",
+            "base": "0x7C000000",
+            "size": "0x4000000"
+        },
+        {
+            "name": "region_ddr",
+            "target": "ta0",
+            "base": "0x80000000",
+            "size": "0x80000000"
+        },
+        {
+            "name": "region_iram",
+            "target": "ta0",
+            "base": "0x0",
+            "size": "0x40000000"
+        },
+        {
+            "name": "region_d2d",
+            "target": "ta_d2d",
+            "base": "0x8000000000",
+            "size": "0x8000000000"
+        }
+    ]
+}
