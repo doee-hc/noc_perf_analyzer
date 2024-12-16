@@ -21,6 +21,24 @@ void  __attribute__ ((interrupt)) internal_exception_handler(void){
   }
   //  CSR_SETEX(CSR_MIP, 0); //MIP will clean by hardware
 }
+#define DCCM_BASE_ADDR  0x00200000
+#define CORE0_DCCM      (CORE_BASE + CORE_SIZE*0 + DCCM_BASE_ADDR)
+#define CORE1_DCCM      (CORE_BASE + CORE_SIZE*1 + DCCM_BASE_ADDR)
+#define CORE2_DCCM      (CORE_BASE + CORE_SIZE*2 + DCCM_BASE_ADDR)
+#define CORE3_DCCM      (CORE_BASE + CORE_SIZE*3 + DCCM_BASE_ADDR)
+#define CORE4_DCCM      (CORE_BASE + CORE_SIZE*4 + DCCM_BASE_ADDR)
+#define CORE5_DCCM      (CORE_BASE + CORE_SIZE*5 + DCCM_BASE_ADDR)
+#define CORE6_DCCM      (CORE_BASE + CORE_SIZE*6 + DCCM_BASE_ADDR)
+#define CORE7_DCCM      (CORE_BASE + CORE_SIZE*7 + DCCM_BASE_ADDR)
+#define CORE8_DCCM      (CORE_BASE + CORE_SIZE*8 + DCCM_BASE_ADDR)
+#define CORE9_DCCM      (CORE_BASE + CORE_SIZE*9 + DCCM_BASE_ADDR)
+#define CORE10_DCCM     (CORE_BASE + CORE_SIZE*10 + DCCM_BASE_ADDR)
+#define CORE11_DCCM     (CORE_BASE + CORE_SIZE*11 + DCCM_BASE_ADDR)
+#define CORE12_DCCM     (CORE_BASE + CORE_SIZE*12 + DCCM_BASE_ADDR)
+#define CORE13_DCCM     (CORE_BASE + CORE_SIZE*13 + DCCM_BASE_ADDR)
+#define CORE14_DCCM     (CORE_BASE + CORE_SIZE*14 + DCCM_BASE_ADDR)
+#define CORE15_DCCM     (CORE_BASE + CORE_SIZE*15 + DCCM_BASE_ADDR)
+
 int main (void)
 {
   int test_value = 0x55;
@@ -41,8 +59,26 @@ int main (void)
   if (my_id == 0 ) {
     // init data for reset core
     for(core_id = 0; core_id < 16; core_id ++ ) {
-      reg32(0x00200000+core_id*4) = 0x12345630|core_id; //DCCM
+      reg32( DCCM_BASE_ADDR + core_id*4 ) = 0x12345630|core_id; //DCCM
     }
+
+    reg64( AXI_DMA_BASE + DMAC_CFGREG) = DMAC_CFGREG_DMAC_EN | DMAC_CFGREG_INT_EN;  // Enable AXI DMA
+
+    reg64( AXI_DMA_BASE + CHx_SAR(1) ) = CORE0_DCCM; 
+    reg64( AXI_DMA_BASE + CHx_DAR(1) ) = CORE1_DCCM; 
+    reg64( AXI_DMA_BASE + CHx_CTL(1) ) =    CHx_CTL_SMS_M1 | 
+                                            CHx_CTL_DMS_M1 |
+                                            CHx_CTL_SINC |
+                                            CHx_CTL_DINC |
+                                            CHx_CTL_SRC_TR_WIDTH_512 |
+                                            CHx_CTL_DST_TR_WIDTH_512 |
+                                            CHx_CTL_SRC_MSIZE_256 |
+                                            CHx_CTL_DST_MSIZE_256; 
+                                            
+                                            
+    reg64( AXI_DMA_BASE + CHx_BLOCK_TS(1) ) = 256;
+
+    reg64( AXI_DMA_BASE + DMAC_CHENREG) = DMAC_CHENREG_CH1_EN;  // Enable AXI DMA Channel 1
 
     // write core1
     for(trans_cnt = 0; trans_cnt < 256; trans_cnt += 4){

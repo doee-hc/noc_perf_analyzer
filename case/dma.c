@@ -16,7 +16,10 @@ static uint32_t pow_u(uint32_t a,uint32_t b){
 
 void dma_init_start(DMA_InitTypeDef *p)
 {
-    reg32( AXI_DMA_BASE + DMAC_CFGREG) = 1 << 11; // Enable AXI DMA
+    reg32( AXI_DMA_BASE + DMAC_CFGREG) = DMAC_CFGREG_DMAC_EN | DMAC_CFGREG_INT_EN;  // Enable AXI DMA
+    reg32( AXI_DMA_BASE + DMAC_CHENREG) = DMAC_CHENREG_CH1_EN;  // Enable AXI DMA Channel 1
+    // TODO
+
     /* set source address of channelx */
     reg32( AXI_DMA_BASE + CHx_SAR_0(p->DMA_Channel) ) = p->DMA_SrcAddr;  //SAR0
     /* set destination address of channelx */
