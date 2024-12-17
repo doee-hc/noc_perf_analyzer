@@ -60,7 +60,13 @@ def calculate_delay(source, source_type, destination, destination_type, destinat
 
     return result_entry
 
-def process_logs(log_files, address_map_file, bus_map_file):
+def gen_latency_logs(log_files):
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    bus_config_dir = os.path.join(os.path.dirname(current_dir), 'bus_config')
+    address_map_file = os.path.join(bus_config_dir, 'address_map.json')
+    bus_map_file = os.path.join(bus_config_dir, 'bus_map.json')
+
     with open(address_map_file, 'r') as f:
         address_map = json.load(f)
 
@@ -140,7 +146,7 @@ def process_logs(log_files, address_map_file, bus_map_file):
                                         result = calculate_delay(ia_log_data, source_type, ta_log_data, destination_type, base_addr, ia_log_name, ta_log_name)
 
                                         if result["data"]:
-                                            output_file_name = f"latency_{ia_log_name}_{ta_log_name}_{suffix}.json"
+                                            output_file_name = f"npa_db/latency_{ia_log_name}_{ta_log_name}_{suffix}.json"
                                             print(f"Write to {output_file_name}")
                                             with open(output_file_name, 'w') as f:
                                                 json.dump(result, f, indent=4)
@@ -154,30 +160,31 @@ def process_logs(log_files, address_map_file, bus_map_file):
                             result = calculate_delay(ia_log_data, source_type, ta_log_data, destination_type, base_addr, ia_log_name, ta_log_name)
 
                             if result["data"]:
-                                output_file_name = f"latency_{ia_log_name}_{ta_log_name}.json"
+                                output_file_name = f"npa_db/latency_{ia_log_name}_{ta_log_name}.json"
                                 print(f"Write to {output_file_name}")
                                 with open(output_file_name, 'w') as f:
                                     json.dump(result, f, indent=4)
 
-def load_and_process():
-    log_files = filedialog.askopenfilenames(title="Select Log Files", filetypes=[("JSON files", "*.json")])
-    address_map_file = filedialog.askopenfilename(title="Select Address Map File", filetypes=[("JSON files", "*.json")])
-    bus_map_file = filedialog.askopenfilename(title="Select Bus Map File", filetypes=[("JSON files", "*.json")])
-    
-    if not log_files or not address_map_file or not bus_map_file:
-        messagebox.showwarning("Warning", "Please select all required files.")
-        return
-    
-    process_logs(log_files, address_map_file, bus_map_file)
+#def load_and_process():
+#    log_files = filedialog.askopenfilenames(title="Select Log Files", filetypes=[("JSON files", "*.json")])
+#    address_map_file = filedialog.askopenfilename(title="Select Address Map File", filetypes=[("JSON files", "*.json")])
+#    bus_map_file = filedialog.askopenfilename(title="Select Bus Map File", filetypes=[("JSON files", "*.json")])
+#    
+#    if not log_files or not address_map_file or not bus_map_file:
+#        messagebox.showwarning("Warning", "Please select all required files.")
+#        return
+#    
+#    process_logs(log_files, address_map_file, bus_map_file)
+#
+#root = tk.Tk()
+#root.title("Log Processor")
+#
+#frame = tk.Frame(root)
+#frame.pack(pady=20)
+#
+#process_button = tk.Button(frame, text="Load and Process Logs", command=load_and_process)
+#process_button.pack()
+#
+#root.mainloop()
 
-root = tk.Tk()
-root.title("Log Processor")
-
-frame = tk.Frame(root)
-frame.pack(pady=20)
-
-process_button = tk.Button(frame, text="Load and Process Logs", command=load_and_process)
-process_button.pack()
-
-root.mainloop()
 

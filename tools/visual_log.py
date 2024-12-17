@@ -6,6 +6,7 @@ import os
 import json
 from scipy.spatial import KDTree
 import numpy as np
+import latency_analyzer as la
 
 def main():
     root = tk.Tk()
@@ -147,10 +148,10 @@ def main():
             for widget in checkbuttons_frame.winfo_children():
                 widget.destroy()
             load_files()
+            la.gen_latency_logs(file_paths)
             for i, file_path in enumerate(file_paths):
                 tab_left = ttk.Frame(notebook_left)
                 notebook_left.add(tab_left, text=os.path.splitext(os.path.basename(file_path))[0])
-
                 log_text_left = Text(tab_left, height=10, width=200)
                 log_text_left.config(state=tk.NORMAL)
                 log_text_left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -259,7 +260,7 @@ def main():
             visible_indices = [i for i, var in enumerate(log_vars) if var.get()]
             y_index = visible_indices.index(idx)
             if notebook_side == 'left':
-                highlight_point(time_value, y_index)
+                highlight_point(time_value)
             else:
                 highlight_second_point(time_value)
 
@@ -378,6 +379,12 @@ def main():
 
 
     def plot_latency():
+        global fig_latency  
+        if 'fig_latency' in globals():
+            try:
+                plt.close(fig_latency)
+            except ValueError:
+                pass
         num_data = len(latency_data)
         fig_latency, axs = plt.subplots(num_data, 1, figsize=(15, num_data), sharex=True,num='Latency')
         
@@ -413,7 +420,13 @@ def main():
                 x_click = event.xdata
                 y_click = event.ydata
                 current_ax = event.inaxes
-                ax_index = np.where(axs == current_ax)[0][0] 
+                
+                # Check if axs is a single Axes object or an array of Axes
+                if isinstance(axs, np.ndarray):
+                    ax_index = np.where(axs == current_ax)[0][0]
+                else:
+                    # If axs is a single Axes object, just set ax_index to 0
+                    ax_index = 0
             else:
                 return
 
@@ -456,42 +469,6 @@ def main():
             latency_highlight_marker = axs[ax_index].axvline(x=time0, color='red', linestyle='--', linewidth=2)
             fig_latency.canvas.draw()
 
-            #
-            #with open(latency_file_paths[y_index], 'r') as file:
-            #    data = json.load(file)
-            #    nearest_entry = data[nearest_idx]
-            #    time_value = nearest_entry['time']
-            #    log_type = nearest_entry['type']
-
-            #    if log_type == 'ia':
-            #        notebook = notebook_left
-            #        text_widgets = text_widgets_left
-            #    else:
-            #        notebook = notebook_right
-            #        text_widgets = text_widgets_right
-
-            #    # Find the corresponding transaction
-            #    for i, transactions in enumerate(transactions_list):
-            #        for j, trans in enumerate(transactions):
-            #            if trans['time'] == time_value:
-            #                notebook.select(i)
-            #                log_text = text_widgets[i]
-            #                log_text.config(state=tk.NORMAL)
-            #                log_text.tag_remove('highlight', '1.0', 'end')
-            #                log_text.see(f"{j + 1}.0")
-            #                log_text.tag_add('highlight', f"{j + 1}.0", f"{j + 2}.0")
-            #                log_text.tag_config('highlight', background='yellow')
-            #                log_text.config(state=tk.DISABLED)
-            #                highlight_latency_point(event, time_value, y_index)
-            #                return
-
-        #def highlight_latency_point(event, time_value, y_index):
-        #    x_min, x_max = axs[y_index].get_xlim()
-        #    if time_value < x_min or time_value > x_max:
-        #        delta_x_div2 = (x_max - x_min) / 2
-        #        axs[y_index].set_xlim(time_value - delta_x_div2, time_value + delta_x_div2)
-        #    highlight_marker = axs[y_index].axvline(x=time_value, color='red', linestyle='--', linewidth=2)
-        #    fig_latency.canvas.draw()
 
         fig_latency.canvas.mpl_connect('button_press_event', on_latency_click)
 
@@ -544,5 +521,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
