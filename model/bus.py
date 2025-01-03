@@ -74,7 +74,7 @@ class FIFO:
     def write(self, data):
         if not self.queue.full():
             self.queue.put(data)
-            print(f"{self.name} put: {data}")  
+            #print(f"{self.name} put: {data}")  
             return True  # Write successful
         #print(f"{self.name} is full, cannot write: {data}")  
         return False  # FIFO full
@@ -82,10 +82,20 @@ class FIFO:
     def read(self):
         if not self.queue.empty():
             data = self.queue.get()
-            print(f"{self.name} get: {data}")   
+            #print(f"{self.name} get: {data}")   
             return data  # Read successful
         #print(f"{self.name} is empty, cannot read")  
         return None  # FIFO empty
+
+    def peek(self):
+        """Peek at the first element without removing it."""
+        if not self.queue.empty():
+            # Access the internal deque structure
+            data = self.queue.queue[0]
+            #print(f"{self.name} peek: {data}")
+            return data
+        #print(f"{self.name} is empty, cannot peek")
+        return None
 
     def valid(self):
         return not self.queue.empty()
@@ -93,11 +103,49 @@ class FIFO:
     def ready(self):
         return not self.queue.full()
 
+    def remaining_space(self):
+        """Get the remaining space in the FIFO."""
+        remaining = self.depth - self.queue.qsize()
+        print(f"{self.name} remaining space: {remaining}")
+        return remaining
+
+class Monitor:
+    def __init__(self):
+        # A dictionary to store the status of tasks.
+        # The key is the task ID, and the value is a boolean indicating whether the task is finished.
+        self.tasks = {}
+
+    def register(self, task_id):
+        """
+        Register a new task ID and mark it as not finished.
+        If the task ID is already registered, it will not be added again.
+        """
+        if task_id not in self.tasks:
+            self.tasks[task_id] = False  # Mark as not finished
+        else:
+            print(f"Task ID {task_id} is already registered.")
+
+    def finish(self, task_id):
+        """
+        Mark the specified task ID as finished.
+        If the task ID is not registered, print a warning message.
+        """
+        if task_id in self.tasks:
+            self.tasks[task_id] = True  # Mark as finished
+        else:
+            print(f"Task ID {task_id} is not registered.")
+
+    def alldone(self):
+        """
+        Check if all tasks are finished.
+        Returns 1 if all tasks are finished, otherwise returns 0.
+        """
+        # Use the all() function to check if all task statuses are True
+        return 1 if all(self.tasks.values()) else 0
 
 class AXIMaster:
-    def __init__(self, data_width, max_outstanding, burst_length, frequency):
+    def __init__(self, master_id, data_width, burst_length, frequency, monitor):
         self.data_width = data_width
-        self.max_outstanding = max_outstanding
         self.burst_length = burst_length
         self.frequency = frequency
 
@@ -110,6 +158,8 @@ class AXIMaster:
         self.ar_fifo = None
         self.r_fifo = None
 
+        self.monitor = monitor
+
         # Transaction tracking
         self.awid_counter = 0  # Counter for AW transaction IDs
         self.arid_counter = 0  # Counter for AR transaction IDs
@@ -121,6 +171,9 @@ class AXIMaster:
         self.outstanding_write_queue = []
         self.w_counter = 0
         self.r_counter = 0
+        self.completed = 0
+        self.master_id = master_id
+        self.block_id = {}
 
         self.read_encoder = PriorityRoundRobinEncoder()
         self.write_encoder = PriorityRoundRobinEncoder()
@@ -133,23 +186,33 @@ class AXIMaster:
         self.r_fifo = r_fifo
         self.dma_fifo = dma_fifo
 
-    def axi_write(self, slave_id, data_length, condition=None, priority=0):
+    def axi_write(self, slave_id, data_len, ost_len, burst_len, condition=None, priority=0):
+        block_id_key = f"{self.master_id}->{slave_id} wr"
+        if block_id_key in self.block_id:
+            self.block_id[block_id_key] += 1
+        else:
+            self.block_id[block_id_key] = 0
+        block_id = f"{block_id_key} {self.block_id[block_id_key]}"
+        self.monitor.register(block_id)
         block = {
+            "block_id": block_id,
             "type": "write",
-            "slave_id": slave_id,
-            "data_length": data_length,
-            "remaining_length": data_length,
+            "data_length": data_len,
             "condition": condition,
             "priority": priority,
-            "transaction_queue": []
+            "transaction_queue": [],
+            "max_outstanding": ost_len,
+            "outstanding_writes": 0,
+            "completed": 0
         }
-        while(data_length > 0):
+        while(data_len> 0):
             awid = self.awid_counter
             self.awid_counter += 1
-            burst = min(self.burst_length, data_length)
-            data_length -= burst
+            burst = min(burst_len, data_len)
+            data_len -= burst
             transaction = {
                 "awid": awid,
+                "slave_id": slave_id,
                 "burst_length": burst,
                 "state": "pending"
             }
@@ -159,23 +222,33 @@ class AXIMaster:
         print(f"Added write block: {block}")
         self.awid_counter += MAX_TRANS_NUM
     
-    def axi_read(self, slave_id, data_length, condition=None, priority=0):
+    def axi_read(self, slave_id, data_len,ost_len,burst_len, condition=None, priority=0):
+        block_id_key = f"{self.master_id}->{slave_id} rd"
+        if block_id_key in self.block_id:
+            self.block_id[block_id_key] += 1
+        else:
+            self.block_id[block_id_key] = 0
+        block_id = f"{block_id_key} {self.block_id[block_id_key]}"
+        self.monitor.register(block_id)
         block = {
+            "block_id": block_id,
             "type": "read",
-            "slave_id": slave_id,
-            "data_length": data_length,
-            "remaining_length": data_length,
+            "data_length": data_len,
             "condition": condition,
             "priority": priority,
-            "transaction_queue": []
+            "transaction_queue": [],
+            "max_outstanding": ost_len,
+            "outstanding_reads": 0,
+            "completed": 0
         }
-        while(data_length > 0):
+        while(data_len> 0):
             arid = self.arid_counter
             self.arid_counter += 1
-            burst = min(self.burst_length, data_length)
-            data_length -= burst
+            burst = min(self.burst_length, data_len)
+            data_len -= burst
             transaction = {
                 "arid": arid,
+                "slave_id": slave_id,
                 "burst_length": burst,
                 "state": "pending"
             }
@@ -202,18 +275,56 @@ class AXIMaster:
                 
 
     def process(self):
+        # W/B channel
+        if self.outstanding_write_queue:
+            wid = self.outstanding_write_queue[0]["awid"]
+            burst = self.outstanding_write_queue[0]["burst"]
+            blkIndex =  self.outstanding_write_queue[0]["blkIndex"]
+            tranIndex =  self.outstanding_write_queue[0]["tranIndex"]
+
+            # w channel
+            if self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] == "in_progress":
+                if self.w_counter < burst:
+                    if self.w_fifo.ready():
+                        self.w_fifo.write({
+                            "wid": wid,
+                            "data": random.randint(0, 2**self.data_width - 1)
+                        })
+                        print(f"{self.master_id} write transfer WID={wid}")
+                        self.w_counter += 1
+                else:
+                    self.w_counter = 0
+                    self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "waiting_b"
+                    print(f"{self.master_id} write transaction waiting for B response: AWID={wid}")
+
+            # b channel
+            if self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] == "waiting_b":
+                if self.b_fifo.ready():
+                    response = self.b_fifo.read()
+                    if response:
+                        if response["bid"] == wid:
+                            self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "completed"
+                            print(f"{self.master_id} write transaction completed: AWID={wid}")
+                            self.outstanding_write_queue.pop(0)
+                            self.block_queue[blkIndex]["outstanding_writes"] -= 1
+                            self.block_queue[blkIndex]["completed"] += 1
+                            if self.block_queue[blkIndex]["completed"] == len(self.block_queue[blkIndex]["transaction_queue"]):
+                                self.monitor.finish(self.block_queue[blkIndex]["block_id"])
+                        else:
+                            raise ValueError(f"BID mismatch, act: {wid}, exp: {response['bid']}")
+        # AW/AR channel
         for blkIndex,block in enumerate(self.block_queue):
             if self.condition_check(block["condition"]):
                 for tranIndex,transaction in enumerate(block["transaction_queue"]):
                     if transaction["state"] == "pending":
                         if block["type"] == "write":
                             # write transaction
-                            if self.aw_fifo.ready() and self.outstanding_writes < self.max_outstanding:
+                            if self.aw_fifo.ready() and block["outstanding_writes"] < block["max_outstanding"]:
                                 self.write_encoder.add_task(Task(task_id={"blkIndex":blkIndex,"tranIndex":tranIndex}, priority=block["priority"]))
 
                         elif block["type"] == "read":
                             # read transaction
-                            if self.ar_fifo.ready() and self.outstanding_reads < self.max_outstanding:
+                            if self.ar_fifo.ready() and block["outstanding_reads"] < block["max_outstanding"]:
                                 self.read_encoder.add_task(Task(task_id={"blkIndex":blkIndex,"tranIndex":tranIndex}, priority=block["priority"]))
                         break
 
@@ -223,10 +334,18 @@ class AXIMaster:
             tranIndex = write_task.task_id["tranIndex"]
             awid = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["awid"]
             burst = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["burst_length"]
-            self.aw_fifo.write({"awid": awid, "burst": burst})
-            self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "in_progress"
-            self.outstanding_write_queue.append({"blkIndex":blkIndex,"tranIndex":tranIndex,"awid":awid,"burst":burst})
-            print(f"Write transaction started: AWID={awid}")
+            slave_id = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["slave_id"]
+            if self.dma_fifo is not None:
+                # dma mode: w data from internal dma fifo
+                if self.dma_fifo.
+
+                # dma mode: r data store into internal dma fifo
+            if self.aw_fifo.ready():
+                self.aw_fifo.write({"slave_id": slave_id, "awid": awid, "burst": burst})
+                self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "in_progress"
+                self.block_queue[blkIndex]["outstanding_writes"] += 1
+                self.outstanding_write_queue.append({"blkIndex":blkIndex,"tranIndex":tranIndex,"awid":awid,"burst":burst})
+                print(f"{self.master_id} write transaction started: AWID={awid}")
 
         read_task = self.read_encoder.get_task()
         if read_task != 0:
@@ -234,43 +353,15 @@ class AXIMaster:
             tranIndex = read_task.task_id["tranIndex"]
             arid = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["arid"]
             burst = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["burst_length"]
-            self.ar_fifo.write({"arid": arid, "burst": burst})
-            self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "waiting_r"
-            self.outstanding_read_queue.append({"blkIndex":blkIndex,"tranIndex":tranIndex,"arid":arid,"burst":burst})
-            print(f"Read transaction started: ARID={arid}")
+            slave_id = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["slave_id"]
+            if self.ar_fifo.ready():
+                self.ar_fifo.write({"slave_id": slave_id, "arid": arid, "burst": burst})
+                self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "waiting_r"
+                self.block_queue[blkIndex]["outstanding_reads"] += 1
+                self.outstanding_read_queue.append({"blkIndex":blkIndex,"tranIndex":tranIndex,"arid":arid,"burst":burst})
+                print(f"{self.master_id} read transaction started: ARID={arid}")
 
-        # w/b channel
-        if self.outstanding_write_queue:
-            wid = self.outstanding_write_queue[0]["awid"]
-            burst = self.outstanding_write_queue[0]["burst"]
-            blkIndex =  self.outstanding_write_queue[0]["blkIndex"]
-            tranIndex =  self.outstanding_write_queue[0]["tranIndex"]
 
-            # w channel
-            if self.block_queue[blkIndex]["transaction_queue"][tranIndex] == "in_progress":
-                if self.w_counter < burst:
-                    if self.w_fifo.ready():
-                        self.w_fifo.write({
-                            "wid": wid,
-                            "data": random.randint(0, 2**self.data_width - 1)
-                        })
-                        self.w_counter += 1
-                else:
-                    self.w_counter = 0
-                    self.block_queue[blkIndex]["transaction_queue"][tranIndex] = "waiting_b"
-                    print(f"Write transaction waiting for B response: AWID={wid}")
-
-            # b channel
-            if self.block_queue[blkIndex]["transaction_queue"][tranIndex] == "waiting_b":
-                if self.b_fifo.ready():
-                    response = self.b_fifo.read()
-                    if response:
-                        if response["bid"] == wid:
-                            self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "completed"
-                            print(f"Write transaction completed: AWID={wid}")
-                            self.outstanding_write_queue.pop(0)
-                        else:
-                            raise ValueError(f"BID mismatch, act: {wid}, exp: {response['bid']}")
 
         # r channel
         if self.outstanding_read_queue:
@@ -301,12 +392,18 @@ class AXIMaster:
             if self.r_counter == burst:
                 self.r_counter = 0
                 self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "completed"
-                print(f"Read transaction completed: ARID={rid}")
+                print(f"{self.master_id} read transaction completed: ARID={rid}")
                 self.outstanding_read_queue.pop(0)
+                self.block_queue[blkIndex]["outstanding_reads"] -= 1
+                self.block_queue[blkIndex]["completed"] += 1
+                if self.block_queue[blkIndex]["completed"] == len(self.block_queue[blkIndex]["transaction_queue"]):
+                    self.monitor.finish(self.block_queue[blkIndex]["block_id"])
+
+
 
 
 class AXISlave:
-    def __init__(self, max_outstanding, frequency):
+    def __init__(self, slave_id, max_outstanding, frequency, monitor):
         self.max_outstanding = max_outstanding
         self.frequency = frequency
 
@@ -316,6 +413,9 @@ class AXISlave:
         self.b_fifo = None
         self.ar_fifo = None
         self.r_fifo = None
+
+        self.monitor = monitor
+        self.slave_id = slave_id
 
         # Internal state
         self.active_writes = []
@@ -343,27 +443,28 @@ class AXISlave:
             if self.b_flag:
                 self.b_flag = 0
                 self.b_fifo.write({"bid":awid})
-                print(f"Slave receive w channel complete {awid}")
+                print(f"{self.slave_id} receive w channel complete AWID={awid}")
                 self.active_writes.pop(0)
             else:
                 w = self.w_fifo.read()
                 if w :
                     wid = w["wid"]
-                    if awid != wid:
-                        raise ValueError(f"WID mismatch, act: {wid}, exp: {awid}")
-                    # discard data
-                    self.w_counter += 1
-                    if self.w_counter == burst:
-                        self.w_counter = 0
-                        self.b_flag = 1
+                    if awid == wid:
+                        #raise ValueError(f"WID mismatch, act: {wid}, exp: {awid}")
+                        self.w_counter += 1
+                        if self.w_counter == burst:
+                            self.w_counter = 0
+                            self.b_flag = 1
 
         # Process AW channel
         if self.aw_fifo.valid() and len(self.active_writes) < self.max_outstanding:
-            aw = self.aw_fifo.read()
+            aw = self.aw_fifo.peek()
             if aw:
-                awid = aw["awid"]
-                burst = aw["burst"]
-                self.active_writes.append({"awid":awid,"burst":burst})
+                if aw["slave_id"] == self.slave_id:
+                    self.aw_fifo.read()
+                    awid = aw["awid"]
+                    burst = aw["burst"]
+                    self.active_writes.append({"awid":awid,"burst":burst})
 
         # Process R channel
         if self.active_reads:
@@ -374,24 +475,30 @@ class AXISlave:
             self.r_counter += 1
             if self.r_counter == burst:
                 self.r_counter = 0
-                print(f"Slave response r channel complete {arid}")
+                print(f"{self.slave_id} response r channel complete {arid}")
                 self.active_reads.pop(0)
 
         # Process AR channel
         if self.ar_fifo.valid() and len(self.active_reads) < self.max_outstanding:
-            ar = self.ar_fifo.read()
+            ar = self.ar_fifo.peek()
             if ar:
-                arid = ar["arid"]
-                burst = ar["burst"]
-                self.active_reads.append({"arid":arid,"burst":burst})
+                if ar["slave_id"] == self.slave_id:
+                    self.ar_fifo.read()
+                    arid = ar["arid"]
+                    burst = ar["burst"]
+                    self.active_reads.append({"arid":arid,"burst":burst})
 
 
 
 # Simulation setup
 def simulate():
     # Initialize master and slave
-    master = AXIMaster(data_width=32, max_outstanding=4, burst_length=4, frequency=100)
-    slave = AXISlave(max_outstanding=4, frequency=100)
+    monitor = Monitor()
+    dma_m0 = AXIMaster(master_id="DMA_M0", data_width=32, burst_length=4, frequency=100, monitor=monitor)
+    dma_m1 = AXIMaster(master_id="DMA_M1", data_width=32, burst_length=4, frequency=100, monitor=monitor)
+    axi_sram = AXISlave(slave_id="AXI_SRAM", max_outstanding=1000, frequency=100, monitor=monitor)
+    dccm = AXISlave(slave_id="DCCM", max_outstanding=1000, frequency=100, monitor=monitor)
+     
 
     # Connect FIFOs
     aw_fifo = FIFO(16, name="aw_fifo")
@@ -401,18 +508,23 @@ def simulate():
     r_fifo = FIFO(16, name="r_fifo")
     dma_fifo = FIFO(16, name="dma_fifo")
 
-    master.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo, dma_fifo)
-    slave.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
+    dma_m0.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo, dma_fifo)
+    axi_sram.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
+    dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
 
-    master.axi_write(slave_id=0, data_length=16)
-    master.axi_read(slave_id=0, data_length=16)
+    dma_m0.axi_read(slave_id="AXI_SRAM", data_len=16, ost_len=1, burst_len=4,condition={"type":"delay","value":0})
+    dma_m0.axi_write(slave_id="DCCM", data_len=16, ost_len=1, burst_len=4,condition={"type":"delay","value":0})
     # Simulate
-    for cycle in range(1000):  # Simulate 1000 clock cycles
-        # Issue write and read commands
-        master.process()
+    #for cycle in range(1000):  # Simulate 1000 clock cycles
+    cycle = 0
+    while not monitor.alldone():
+        cycle += 1
+        print(f"cycle:{cycle}")
 
-        # Handle responses
-        slave.process()
+        # Issue write and read commands
+        dma_m0.process()
+        axi_sram.process()
+        dccm.process()
 
         # Add any additional simulation logic here
 
