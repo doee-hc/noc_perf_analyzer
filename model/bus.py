@@ -1,6 +1,8 @@
 import queue
 import random
 import time 
+from functools import reduce
+from math import gcd
 
 MAX_TRANS_NUM = 10000
 
@@ -103,19 +105,27 @@ class FIFO:
     def ready(self):
         return not self.queue.full()
 
-    def remaining_space(self):
+    def unused(self):
         """Get the remaining space in the FIFO."""
-        remaining = self.depth - self.queue.qsize()
-        print(f"{self.name} remaining space: {remaining}")
-        return remaining
+        unused = self.depth - self.queue.qsize()
+        return unused
+
+    def used(self):
+        """Get the remaining space in the FIFO."""
+        used = self.queue.qsize()
+        return used 
 
 class Monitor:
     def __init__(self):
         # A dictionary to store the status of tasks.
         # The key is the task ID, and the value is a boolean indicating whether the task is finished.
         self.tasks = {}
+        self.instances = {}
+        self.tick = 0
+        self.max_freq = 0
+        self.multiplier = 0
 
-    def register(self, task_id):
+    def register_task(self, task_id):
         """
         Register a new task ID and mark it as not finished.
         If the task ID is already registered, it will not be added again.
@@ -124,6 +134,8 @@ class Monitor:
             self.tasks[task_id] = False  # Mark as not finished
         else:
             print(f"Task ID {task_id} is already registered.")
+
+
 
     def finish(self, task_id):
         """
@@ -135,21 +147,108 @@ class Monitor:
         else:
             print(f"Task ID {task_id} is not registered.")
 
-    def alldone(self):
+    def simloop(self):
         """
         Check if all tasks are finished.
         Returns 1 if all tasks are finished, otherwise returns 0.
         """
+        self.tick += 1
         # Use the all() function to check if all task statuses are True
-        return 1 if all(self.tasks.values()) else 0
+        return 0 if all(self.tasks.values()) else 1
+
+    def _lcm(self, a, b):
+        """Calculate the least common multiple of two numbers"""
+        return abs(a * b) // gcd(a, b)
+
+    def _lcm_multiple(self, numbers):
+        """Calculate the least common multiple of multiple numbers"""
+        return reduce(self._lcm, numbers)
+
+    def _get_fraction_denominator(self, fractional):
+        """将小数部分转化为分数，并返回分母"""
+        # 将小数转化为分数
+        from fractions import Fraction
+        fraction = Fraction(fractional).limit_denominator()
+        return fraction.denominator
+
+    def register_instance(self, instance_id, freq):
+        """
+        Register a new instance ID, marking it as enabled.
+        If the instance ID is already registered, it will not be added again.
+        """
+        if instance_id not in self.instances:
+            # 添加新实例
+            self.instances[instance_id] = {"freq":freq}
+            self.instances[instance_id]["cycles"] = 0
+            # 获取当前所有实例的频率
+            current_freqs = [instance["freq"] for instance in self.instances.values()]
+            if current_freqs:
+                # 找到最大频率
+                self.max_freq = max(current_freqs)
+
+                # 计算初始 interval（可能是小数）
+                for inst_id, inst in self.instances.items():
+                    inst["interval"] = self.max_freq / inst["freq"]
+
+                # 找到所有 interval 的分母
+                intervals = [inst["interval"] for inst in self.instances.values()]
+                denominators = []
+
+                for interval in intervals:
+                    # 分离小数部分，转化为分数
+                    fractional_part = interval - int(interval)
+                    if fractional_part > 0:  # 只有小数部分不为0时才处理
+                        # 将小数转化为分数，找到分母
+                        denominator = self._get_fraction_denominator(fractional_part)
+                        denominators.append(denominator)
+
+                # 如果有小数部分，计算最小公倍数进行放大
+                if denominators:
+                    self.multiplier = self._lcm_multiple(denominators)
+                else:
+                    self.multiplier = 1  # 如果全是整数，不需要放大
+
+                # 更新所有 interval 为整数
+                for inst_id, inst in self.instances.items():
+                    inst["interval"] = int(inst["interval"] * self.multiplier)
+            else:
+                # 如果是第一个实例，直接设置 interval 为 1
+                self.instances[instance_id]["interval"] = 1
+        else:
+            print(f"Instance ID {instance_id} is already registered.")
+
+    def get_time(self):
+        # ns
+        return self.tick * 1e9 / (self.max_freq * self.multiplier)
+
+    def get_instance_cycle(self, instance_id):
+        return self.instances[instance_id]["cycles"]
+
+    def check_active(self, instance_id):
+        """
+        Check if the instance with the given ID is active based on the current tick.
+        Returns 1 if the instance is active, otherwise returns 0.
+        """
+        if instance_id in self.instances:
+            interval = self.instances[instance_id]["interval"]
+            # Check if the current tick modulo the interval equals 0
+            if self.tick % interval == 0:
+                self.instances[instance_id]["cycles"] += 1
+                return 1
+            else:
+                return 0
+        else:
+            print(f"Instance ID {instance_id} is not registered.")
+            return 0
+
+
 
 class AXIMaster:
     def __init__(self, master_id, data_width, burst_length, frequency, monitor):
+        monitor.register_instance(master_id,frequency)
         self.data_width = data_width
         self.burst_length = burst_length
         self.frequency = frequency
-
-        self.dma_fifo = None
 
         # FIFOs for communication
         self.aw_fifo = None
@@ -178,13 +277,12 @@ class AXIMaster:
         self.read_encoder = PriorityRoundRobinEncoder()
         self.write_encoder = PriorityRoundRobinEncoder()
 
-    def connect_fifos(self, aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo, dma_fifo=None):
+    def connect_fifos(self, aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo):
         self.aw_fifo = aw_fifo
         self.w_fifo = w_fifo
         self.b_fifo = b_fifo
         self.ar_fifo = ar_fifo
         self.r_fifo = r_fifo
-        self.dma_fifo = dma_fifo
 
     def axi_write(self, slave_id, data_len, ost_len, burst_len, condition=None, priority=0):
         block_id_key = f"{self.master_id}->{slave_id} wr"
@@ -193,11 +291,12 @@ class AXIMaster:
         else:
             self.block_id[block_id_key] = 0
         block_id = f"{block_id_key} {self.block_id[block_id_key]}"
-        self.monitor.register(block_id)
+        self.monitor.register_task(block_id)
         block = {
             "block_id": block_id,
             "type": "write",
             "data_length": data_len,
+            "burst_length": burst_len,
             "condition": condition,
             "priority": priority,
             "transaction_queue": [],
@@ -229,11 +328,12 @@ class AXIMaster:
         else:
             self.block_id[block_id_key] = 0
         block_id = f"{block_id_key} {self.block_id[block_id_key]}"
-        self.monitor.register(block_id)
+        self.monitor.register_task(block_id)
         block = {
             "block_id": block_id,
             "type": "read",
             "data_length": data_len,
+            "burst_length": burst_len,
             "condition": condition,
             "priority": priority,
             "transaction_queue": [],
@@ -259,22 +359,39 @@ class AXIMaster:
         print(f"Added read block: {block}")
         self.arid_counter += MAX_TRANS_NUM
 
-    def condition_check(self,condition):
+    def condition_check(self,block):
+        condition = block["condition"]
+        check_pass = 1
         if condition:
-            if(condition["type"] == "delay"):
+            if(check_pass and "delay" in condition):
                 if 'delay_counter' not in condition:
                     condition["delay_counter"] = 0
 
-                if(condition["delay_counter"] >= condition["value"]):
-                    return 1
-                else:
+                if(condition["delay_counter"] < condition["delay"]):
                     condition["delay_counter"] += 1
-                    return 0
-        else:
-            return 1
+                    check_pass = 0
+                else:
+                    check_pass = 1
+            if(check_pass and "ext_data" in condition):
+                ext_data_fifo = condition["ext_data"]
+                if block["type"] == "write":
+                    if ext_data_fifo.used() >= block["burst_length"]:
+                        check_pass = 1
+                    else:
+                        check_pass = 0
+                if block["type"] == "read":
+                    if ext_data_fifo.unused() >= block["burst_length"]:
+                        check_pass = 1
+                    else:
+                        check_pass = 0
+        return check_pass
                 
 
     def process(self):
+
+        if not self.monitor.check_active(self.master_id):
+            return
+
         # W/B channel
         if self.outstanding_write_queue:
             wid = self.outstanding_write_queue[0]["awid"]
@@ -286,6 +403,11 @@ class AXIMaster:
             if self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] == "in_progress":
                 if self.w_counter < burst:
                     if self.w_fifo.ready():
+                        if self.block_queue[blkIndex]["condition"] and "ext_data" in self.block_queue[blkIndex]["condition"]:
+                            ext_data_fifo = self.block_queue[blkIndex]["condition"]["ext_data"]
+                            wdata = ext_data_fifo.read()
+                        else:
+                            wdata = random.randint(0, 2**self.data_width - 1)
                         self.w_fifo.write({
                             "wid": wid,
                             "data": random.randint(0, 2**self.data_width - 1)
@@ -314,7 +436,7 @@ class AXIMaster:
                             raise ValueError(f"BID mismatch, act: {wid}, exp: {response['bid']}")
         # AW/AR channel
         for blkIndex,block in enumerate(self.block_queue):
-            if self.condition_check(block["condition"]):
+            if self.condition_check(block):
                 for tranIndex,transaction in enumerate(block["transaction_queue"]):
                     if transaction["state"] == "pending":
                         if block["type"] == "write":
@@ -335,17 +457,13 @@ class AXIMaster:
             awid = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["awid"]
             burst = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["burst_length"]
             slave_id = self.block_queue[blkIndex]["transaction_queue"][tranIndex]["slave_id"]
-            if self.dma_fifo is not None:
-                # dma mode: w data from internal dma fifo
-                if self.dma_fifo.
-
-                # dma mode: r data store into internal dma fifo
             if self.aw_fifo.ready():
                 self.aw_fifo.write({"slave_id": slave_id, "awid": awid, "burst": burst})
                 self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "in_progress"
                 self.block_queue[blkIndex]["outstanding_writes"] += 1
                 self.outstanding_write_queue.append({"blkIndex":blkIndex,"tranIndex":tranIndex,"awid":awid,"burst":burst})
                 print(f"{self.master_id} write transaction started: AWID={awid}")
+
 
         read_task = self.read_encoder.get_task()
         if read_task != 0:
@@ -369,26 +487,17 @@ class AXIMaster:
             burst = self.outstanding_read_queue[0]["burst"]
             blkIndex = self.outstanding_read_queue[0]["blkIndex"]
             tranIndex = self.outstanding_read_queue[0]["tranIndex"]
-            if self.dma_fifo is not None:
-                # dma mode: r data store into internal dma fifo
-                if self.r_fifo.valid() and self.dma_fifo.ready():
-                    response = self.r_fifo.read()
-                    if response:
-                        if response["rid"] == rid:
-                            self.r_counter += 1
-                            self.dma_fifo.write(response)
-                        else:
-                            raise ValueError(f"RID mismatch, act: {rid}, exp: {response['rid']}")
-            else:
-                # nomal mode: always rready
-                if self.r_fifo.valid():
-                    response = self.r_fifo.read()
-                    if response:
-                        if response["rid"] == rid:
-                            self.r_counter += 1
-                            # discard data
-                        else:
-                            raise ValueError(f"RID mismatch, act: {rid}, exp: {response['rid']}")
+
+            if self.r_fifo.valid():
+                response = self.r_fifo.read()
+                if response["rid"] == rid:
+                    self.r_counter += 1
+                    if self.block_queue[blkIndex]["condition"] and "ext_data" in self.block_queue[blkIndex]["condition"]:
+                        ext_data_fifo = self.block_queue[blkIndex]["condition"]["ext_data"]
+                        ext_data_fifo.write(response)
+                else:
+                    raise ValueError(f"RID mismatch, act: {rid}, exp: {response['rid']}")
+
             if self.r_counter == burst:
                 self.r_counter = 0
                 self.block_queue[blkIndex]["transaction_queue"][tranIndex]["state"] = "completed"
@@ -404,6 +513,7 @@ class AXIMaster:
 
 class AXISlave:
     def __init__(self, slave_id, max_outstanding, frequency, monitor):
+        monitor.register_instance(slave_id,frequency)
         self.max_outstanding = max_outstanding
         self.frequency = frequency
 
@@ -434,6 +544,9 @@ class AXISlave:
         self.r_fifo = r_fifo
 
     def process(self):
+
+        if not self.monitor.check_active(self.slave_id):
+            return
 
         # Process W/B channel
         if self.active_writes:
@@ -494,11 +607,12 @@ class AXISlave:
 def simulate():
     # Initialize master and slave
     monitor = Monitor()
-    dma_m0 = AXIMaster(master_id="DMA_M0", data_width=32, burst_length=4, frequency=100, monitor=monitor)
-    dma_m1 = AXIMaster(master_id="DMA_M1", data_width=32, burst_length=4, frequency=100, monitor=monitor)
-    axi_sram = AXISlave(slave_id="AXI_SRAM", max_outstanding=1000, frequency=100, monitor=monitor)
-    dccm = AXISlave(slave_id="DCCM", max_outstanding=1000, frequency=100, monitor=monitor)
+    dma_m0 = AXIMaster(master_id="DMA_M0", data_width=32, burst_length=4, frequency=1.2e9, monitor=monitor)
+    dma_m1 = AXIMaster(master_id="DMA_M1", data_width=32, burst_length=4, frequency=1.2e9, monitor=monitor)
+    axi_sram = AXISlave(slave_id="AXI_SRAM", max_outstanding=1000, frequency=1.2e9, monitor=monitor)
+    dccm = AXISlave(slave_id="DCCM", max_outstanding=1000, frequency=0.4e9, monitor=monitor)
      
+    print(monitor.instances)
 
     # Connect FIFOs
     aw_fifo = FIFO(16, name="aw_fifo")
@@ -506,20 +620,21 @@ def simulate():
     b_fifo = FIFO(16, name="b_fifo")
     ar_fifo = FIFO(16, name="ar_fifo")
     r_fifo = FIFO(16, name="r_fifo")
-    dma_fifo = FIFO(16, name="dma_fifo")
 
-    dma_m0.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo, dma_fifo)
+    dma_ch0_fifo = FIFO(16, name="dma_ch0_fifo")
+    dma_ch1_fifo = FIFO(16, name="dma_ch0_fifo")
+
+    dma_m0.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo )
     axi_sram.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
     dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
 
-    dma_m0.axi_read(slave_id="AXI_SRAM", data_len=16, ost_len=1, burst_len=4,condition={"type":"delay","value":0})
-    dma_m0.axi_write(slave_id="DCCM", data_len=16, ost_len=1, burst_len=4,condition={"type":"delay","value":0})
+    dma_m0.axi_read(slave_id="AXI_SRAM", data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch0_fifo})
+    dma_m0.axi_write(slave_id="DCCM", data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch0_fifo})
     # Simulate
     #for cycle in range(1000):  # Simulate 1000 clock cycles
     cycle = 0
-    while not monitor.alldone():
-        cycle += 1
-        print(f"cycle:{cycle}")
+    while monitor.simloop():
+        print(f"time:{monitor.get_time():.2f}ns")
 
         # Issue write and read commands
         dma_m0.process()
