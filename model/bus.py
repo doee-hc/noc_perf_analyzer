@@ -260,8 +260,8 @@ class AXIMaster:
         self.monitor = monitor
 
         # Transaction tracking
-        self.awid_counter = 0  # Counter for AW transaction IDs
-        self.arid_counter = 0  # Counter for AR transaction IDs
+        self.base_awid = 0  # Counter for AW transaction IDs
+        self.base_arid = 0  # Counter for AR transaction IDs
         self.outstanding_writes = 0  # Count of outstanding write transactions
         self.outstanding_reads = 0   # Count of outstanding read transactions
         self.block_queue = []
@@ -302,11 +302,12 @@ class AXIMaster:
             "transaction_queue": [],
             "max_outstanding": ost_len,
             "outstanding_writes": 0,
-            "completed": 0
+            "completed": 0,
+            "awid_counter": self.base_awid
         }
         while(data_len> 0):
-            awid = self.awid_counter
-            self.awid_counter += 1
+            awid = block["awid_counter"]
+            block["awid_counter"] += 1
             burst = min(burst_len, data_len)
             data_len -= burst
             transaction = {
@@ -319,7 +320,7 @@ class AXIMaster:
 
         self.block_queue.append(block)
         print(f"Added write block: {block}")
-        self.awid_counter += MAX_TRANS_NUM
+        self.base_awid += MAX_TRANS_NUM
     
     def axi_read(self, slave_id, data_len,ost_len,burst_len, condition=None, priority=0):
         block_id_key = f"{self.master_id}->{slave_id} rd"
@@ -339,11 +340,12 @@ class AXIMaster:
             "transaction_queue": [],
             "max_outstanding": ost_len,
             "outstanding_reads": 0,
-            "completed": 0
+            "completed": 0,
+            "arid_counter": self.base_arid
         }
         while(data_len> 0):
-            arid = self.arid_counter
-            self.arid_counter += 1
+            arid = block["arid_counter"]
+            block["arid_counter"] += 1
             burst = min(self.burst_length, data_len)
             data_len -= burst
             transaction = {
@@ -357,7 +359,7 @@ class AXIMaster:
 
         self.block_queue.append(block)
         print(f"Added read block: {block}")
-        self.arid_counter += MAX_TRANS_NUM
+        self.base_arid += MAX_TRANS_NUM
 
     def condition_check(self,block):
         condition = block["condition"]
@@ -559,12 +561,14 @@ class AXISlave:
                 print(f"{self.slave_id} receive w channel complete AWID={awid}")
                 self.active_writes.pop(0)
             else:
-                w = self.w_fifo.read()
+                w = self.w_fifo.peek()
                 if w :
                     wid = w["wid"]
                     if awid == wid:
+                        self.w_fifo.read()
                         #raise ValueError(f"WID mismatch, act: {wid}, exp: {awid}")
                         self.w_counter += 1
+                        print(f"{self.slave_id} receive W channel AWID={awid}")
                         if self.w_counter == burst:
                             self.w_counter = 0
                             self.b_flag = 1
@@ -578,6 +582,7 @@ class AXISlave:
                     awid = aw["awid"]
                     burst = aw["burst"]
                     self.active_writes.append({"awid":awid,"burst":burst})
+                    print(f"{self.slave_id} AW channel complete AWID={awid}")
 
         # Process R channel
         if self.active_reads:
@@ -606,11 +611,31 @@ class AXISlave:
 # Simulation setup
 def simulate():
     # Initialize master and slave
+
     monitor = Monitor()
+
+    # 1.2G * 256bit
     dma_m0 = AXIMaster(master_id="DMA_M0", data_width=32, burst_length=4, frequency=1.2e9, monitor=monitor)
     dma_m1 = AXIMaster(master_id="DMA_M1", data_width=32, burst_length=4, frequency=1.2e9, monitor=monitor)
     axi_sram = AXISlave(slave_id="AXI_SRAM", max_outstanding=1000, frequency=1.2e9, monitor=monitor)
-    dccm = AXISlave(slave_id="DCCM", max_outstanding=1000, frequency=0.4e9, monitor=monitor)
+
+    # 400M * 64bit
+    core00_dccm = AXISlave(slave_id="CORE00_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core01_dccm = AXISlave(slave_id="CORE01_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core02_dccm = AXISlave(slave_id="CORE02_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core03_dccm = AXISlave(slave_id="CORE03_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core10_dccm = AXISlave(slave_id="CORE10_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core11_dccm = AXISlave(slave_id="CORE11_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core12_dccm = AXISlave(slave_id="CORE12_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core13_dccm = AXISlave(slave_id="CORE13_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core20_dccm = AXISlave(slave_id="CORE20_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core21_dccm = AXISlave(slave_id="CORE21_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core22_dccm = AXISlave(slave_id="CORE22_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core23_dccm = AXISlave(slave_id="CORE23_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core30_dccm = AXISlave(slave_id="CORE30_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core31_dccm = AXISlave(slave_id="CORE31_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core32_dccm = AXISlave(slave_id="CORE32_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
+    core33_dccm = AXISlave(slave_id="CORE33_DCCM", max_outstanding=1000, frequency=0.1e9, monitor=monitor)
      
     print(monitor.instances)
 
@@ -621,25 +646,80 @@ def simulate():
     ar_fifo = FIFO(16, name="ar_fifo")
     r_fifo = FIFO(16, name="r_fifo")
 
-    dma_ch0_fifo = FIFO(16, name="dma_ch0_fifo")
-    dma_ch1_fifo = FIFO(16, name="dma_ch0_fifo")
+    dma_ch1_fifo = FIFO(16, name="dma_ch1_fifo")
+    dma_ch2_fifo = FIFO(16, name="dma_ch2_fifo")
+    dma_ch3_fifo = FIFO(16, name="dma_ch3_fifo")
+    dma_ch4_fifo = FIFO(16, name="dma_ch4_fifo")
+    dma_ch5_fifo = FIFO(16, name="dma_ch5_fifo")
+    dma_ch6_fifo = FIFO(16, name="dma_ch6_fifo")
+    dma_ch7_fifo = FIFO(16, name="dma_ch7_fifo")
+    dma_ch8_fifo = FIFO(16, name="dma_ch8_fifo")
 
     dma_m0.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo )
     axi_sram.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
-    dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
+    core00_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo) 
+    core01_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo) 
+    core02_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core03_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core10_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core11_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core12_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core13_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core20_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core21_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core22_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core23_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core30_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core31_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core32_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)  
+    core33_dccm.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo) 
 
-    dma_m0.axi_read(slave_id="AXI_SRAM", data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch0_fifo})
-    dma_m0.axi_write(slave_id="DCCM", data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch0_fifo})
+
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch1_fifo})
+    dma_m0.axi_write(slave_id="CORE00_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch1_fifo})
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch2_fifo})
+    dma_m0.axi_write(slave_id="CORE01_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch2_fifo})
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch3_fifo})
+    dma_m0.axi_write(slave_id="CORE02_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch3_fifo})
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch4_fifo})
+    dma_m0.axi_write(slave_id="CORE03_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch4_fifo})
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch5_fifo})
+    dma_m0.axi_write(slave_id="CORE10_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch5_fifo})
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch6_fifo})
+    dma_m0.axi_write(slave_id="CORE11_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch6_fifo})
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch7_fifo})
+    dma_m0.axi_write(slave_id="CORE12_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch7_fifo})
+    dma_m0.axi_read(slave_id="AXI_SRAM",        data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch8_fifo})
+    dma_m0.axi_write(slave_id="CORE13_DCCM",    data_len=16, ost_len=2, burst_len=4,condition={"delay":0,"ext_data":dma_ch8_fifo})
+
+
     # Simulate
     #for cycle in range(1000):  # Simulate 1000 clock cycles
     cycle = 0
     while monitor.simloop():
         print(f"time:{monitor.get_time():.2f}ns")
 
+        if(monitor.get_time() > 1000):
+            return
         # Issue write and read commands
         dma_m0.process()
         axi_sram.process()
-        dccm.process()
+        core00_dccm.process()
+        core01_dccm.process()
+        core02_dccm.process()
+        core03_dccm.process()
+        core10_dccm.process()
+        core11_dccm.process()
+        core12_dccm.process()
+        core13_dccm.process()
+        core20_dccm.process()
+        core21_dccm.process()
+        core22_dccm.process()
+        core23_dccm.process()
+        core30_dccm.process()
+        core31_dccm.process()
+        core32_dccm.process()
+        core33_dccm.process()
 
         # Add any additional simulation logic here
 
