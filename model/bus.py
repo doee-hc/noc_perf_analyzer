@@ -3,6 +3,7 @@ import random
 import time 
 from functools import reduce
 from math import gcd
+import plot_fifo
 
 MAX_TRANS_NUM = 10000
 
@@ -68,14 +69,18 @@ class PriorityRoundRobinEncoder:
         self.current_priority_index = 0  # Reset the round-robin index
 
 class FIFO:
-    def __init__(self, depth, name="FIFO"):
+    def __init__(self, depth, monitor, width, name="FIFO"):
         self.depth = depth
         self.queue = queue.Queue(maxsize=depth)
         self.name = name  
+        self.monitor = monitor
+        self.monitor.register_fifo(name,width)
+        self.width = width
 
     def write(self, data):
         if not self.queue.full():
             self.queue.put(data)
+            self.monitor.fifo_write(self.name)
             #print(f"{self.name} put: {data}")  
             return True  # Write successful
         #print(f"{self.name} is full, cannot write: {data}")  
@@ -84,6 +89,7 @@ class FIFO:
     def read(self):
         if not self.queue.empty():
             data = self.queue.get()
+            self.monitor.fifo_read(self.name)
             #print(f"{self.name} get: {data}")   
             return data  # Read successful
         #print(f"{self.name} is empty, cannot read")  
@@ -116,14 +122,18 @@ class FIFO:
         return used 
 
 class Monitor:
-    def __init__(self):
+    def __init__(self, time_window, finish_time=None):
         # A dictionary to store the status of tasks.
         # The key is the task ID, and the value is a boolean indicating whether the task is finished.
         self.tasks = {}
         self.instances = {}
+        self.fifos = {}
         self.tick = 0
         self.max_freq = 0
         self.multiplier = 0
+        self.last_time = 0
+        self.time_window = time_window
+        self.finish_time = finish_time
 
     def register_task(self, task_id):
         """
@@ -153,6 +163,10 @@ class Monitor:
         Returns 1 if all tasks are finished, otherwise returns 0.
         """
         self.tick += 1
+        if self.finish_time:
+            time = self.get_time()
+            if time > self.finish_time:
+                return 0
         # Use the all() function to check if all task statuses are True
         return 0 if all(self.tasks.values()) else 1
 
@@ -240,6 +254,39 @@ class Monitor:
         else:
             print(f"Instance ID {instance_id} is not registered.")
             return 0
+
+    def register_fifo(self,fifo_id,width):
+        if fifo_id not in self.fifos:
+            self.fifos[fifo_id] = {"width":width,"write":[],"windex":0,"read":[],"rindex":0}
+        else:
+            print(f"FIFO ID {fifo_id} is already registered.")
+
+    def fifo_read(self,fifo_id):
+        self.fifos[fifo_id]["read"].append(self.get_time())
+
+    def fifo_write(self,fifo_id):
+        self.fifos[fifo_id]["write"].append(self.get_time())
+
+    def get_fifo_throughput(self, fifo_id, qtype):
+        time = self.get_time()
+        cnt = 0
+        if qtype == "read":
+            for i in range(self.fifos[fifo_id]["rindex"],len(self.fifos[fifo_id]["read"]),1):
+                if self.fifos[fifo_id]["read"][i] > (time - self.time_window):
+                    if cnt == 0:
+                        self.fifos[fifo_id]["rindex"] = i
+                    cnt += 1
+        if qtype == "write":
+            for i in range(self.fifos[fifo_id]["windex"],len(self.fifos[fifo_id]["write"]),1):
+                if self.fifos[fifo_id]["write"][i] > (time - self.time_window):
+                    if cnt == 0:
+                        self.fifos[fifo_id]["windex"] = i
+                    cnt += 1
+
+        # MB/s
+        throughput = cnt * self.fifos[fifo_id]["width"] * 1e9 / (8 * self.time_window * 1024 * 1024)
+
+        return throughput
 
 
 
@@ -612,7 +659,7 @@ class AXISlave:
 def simulate():
     # Initialize master and slave
 
-    monitor = Monitor()
+    monitor = Monitor(time_window = 300, finish_time = 1000)
 
     # 1.2G * 256bit
     dma_m0 = AXIMaster(master_id="DMA_M0", data_width=32, burst_length=4, frequency=1.2e9, monitor=monitor)
@@ -640,20 +687,20 @@ def simulate():
     print(monitor.instances)
 
     # Connect FIFOs
-    aw_fifo = FIFO(16, name="aw_fifo")
-    w_fifo = FIFO(16, name="w_fifo")
-    b_fifo = FIFO(16, name="b_fifo")
-    ar_fifo = FIFO(16, name="ar_fifo")
-    r_fifo = FIFO(16, name="r_fifo")
+    aw_fifo = FIFO(16, name="aw_fifo", width=256,monitor=monitor)
+    w_fifo  = FIFO(16, name="w_fifo" , width=256,monitor=monitor)
+    b_fifo  = FIFO(16, name="b_fifo" , width=256,monitor=monitor)
+    ar_fifo = FIFO(16, name="ar_fifo", width=256,monitor=monitor)
+    r_fifo  = FIFO(16, name="r_fifo" , width=256,monitor=monitor)
 
-    dma_ch1_fifo = FIFO(16, name="dma_ch1_fifo")
-    dma_ch2_fifo = FIFO(16, name="dma_ch2_fifo")
-    dma_ch3_fifo = FIFO(16, name="dma_ch3_fifo")
-    dma_ch4_fifo = FIFO(16, name="dma_ch4_fifo")
-    dma_ch5_fifo = FIFO(16, name="dma_ch5_fifo")
-    dma_ch6_fifo = FIFO(16, name="dma_ch6_fifo")
-    dma_ch7_fifo = FIFO(16, name="dma_ch7_fifo")
-    dma_ch8_fifo = FIFO(16, name="dma_ch8_fifo")
+    dma_ch1_fifo = FIFO(16, name="dma_ch1_fifo", width=256, monitor=monitor)
+    dma_ch2_fifo = FIFO(16, name="dma_ch2_fifo", width=256, monitor=monitor)
+    dma_ch3_fifo = FIFO(16, name="dma_ch3_fifo", width=256, monitor=monitor)
+    dma_ch4_fifo = FIFO(16, name="dma_ch4_fifo", width=256, monitor=monitor)
+    dma_ch5_fifo = FIFO(16, name="dma_ch5_fifo", width=256, monitor=monitor)
+    dma_ch6_fifo = FIFO(16, name="dma_ch6_fifo", width=256, monitor=monitor)
+    dma_ch7_fifo = FIFO(16, name="dma_ch7_fifo", width=256, monitor=monitor)
+    dma_ch8_fifo = FIFO(16, name="dma_ch8_fifo", width=256, monitor=monitor)
 
     dma_m0.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo )
     axi_sram.connect_fifos(aw_fifo, w_fifo, b_fifo, ar_fifo, r_fifo)
@@ -694,13 +741,9 @@ def simulate():
 
 
     # Simulate
-    #for cycle in range(1000):  # Simulate 1000 clock cycles
-    cycle = 0
     while monitor.simloop():
         print(f"time:{monitor.get_time():.2f}ns")
-
-        if(monitor.get_time() > 1000):
-            return
+        print(monitor.get_fifo_throughput("w_fifo","read"))
         # Issue write and read commands
         dma_m0.process()
         axi_sram.process()
